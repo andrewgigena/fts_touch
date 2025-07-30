@@ -37,9 +37,9 @@
 #include <linux/module.h>
 #include <linux/slab.h>
 #include <linux/string.h>
-#include <stdarg.h>
+#include <linux/stdarg.h>
 #include <linux/serio.h>
-#include <linux/time.h>
+#include <linux/time64.h>
 #include <linux/delay.h>
 #include <linux/ctype.h>
 #include <linux/fs.h>
@@ -230,7 +230,7 @@ int wait_for_flash_ready(u8 type)
 			pr_err("wait_for_flash_ready: ERROR %08X\n",
 				ERROR_BUS_W);
 		else {
-#ifdef I2C_INTERFACE	/* in case of spi there is a dummy byte */
+#ifdef CONFIG_TOUCHSCREEN_STM_FTS_DOWNSTREAM_I2C	/* in case of spi there is a dummy byte */
 			res = readData[0] & 0x80;
 #else
 			res = readData[1] & 0x80;
@@ -270,7 +270,7 @@ int hold_m3(void)
 	}
 	pr_info("Hold M3 DONE!\n");
 
-#if !defined(I2C_INTERFACE)
+#if !IS_ENABLED(CONFIG_TOUCHSCREEN_STM_FTS_DOWNSTREAM_I2C)
 	if (getClient() &&
 		(getClient()->mode & SPI_3WIRE) == 0) {
 		/* configure manually SPI4 because when no fw is running the

@@ -49,16 +49,19 @@
 #include <linux/completion.h>
 #include <linux/device.h>
 #include <linux/of.h>
-
+#include <linux/version.h>
 #include <linux/gpio.h>
 #include <linux/of_gpio.h>
 #include <linux/regulator/consumer.h>
+#include <linux/pinctrl/consumer.h>
 
 #ifdef KERNEL_ABOVE_2_6_38
 #include <linux/input/mt.h>
 #endif
 
+#ifdef CONFIG_TOUCHSCREEN_OFFLOAD
 #include <linux/input/touch_offload.h>
+#endif
 
 #include <drm/drm_panel.h>
 #include <video/display_timing.h>
@@ -176,7 +179,7 @@ void release_all_touches(struct fts_ts_info *info)
 		input_report_abs(info->input_dev, ABS_MT_PRESSURE, 0);
 		input_mt_report_slot_state(info->input_dev, type, 0);
 		input_report_abs(info->input_dev, ABS_MT_TRACKING_ID, -1);
-#if IS_ENABLED(CONFIG_TOUCHSCREEN_OFFLOAD)
+#ifdef CONFIG_TOUCHSCREEN_OFFLOAD
 		info->offload.coords[i].status = COORD_STATUS_INACTIVE;
 		info->offload.coords[i].major = 0;
 		info->offload.coords[i].minor = 0;
@@ -1525,12 +1528,12 @@ static void touchsim_work(struct work_struct *work)
 	struct fts_ts_info *info  = container_of(touchsim,
 						struct fts_ts_info,
 						touchsim);
-#if IS_ENABLED(CONFIG_TOUCHSCREEN_HEATMAP)
+#ifdef CONFIG_TOUCHSCREEN_HEATMAP
 	ktime_t timestamp = ktime_get();
 #endif
 
 	/* prevent CPU from entering deep sleep */
-	pm_qos_update_request(&info->pm_qos_req, 100);
+	cpu_latency_qos_update_request(&info->pm_qos_req, 100);
 
 	/* Notify the PM core that the wakeup event will take 1 sec */
 	__pm_wakeup_event(info->wakesrc, jiffies_to_msecs(HZ));
@@ -1544,11 +1547,11 @@ static void touchsim_work(struct work_struct *work)
 
 	input_sync(info->input_dev);
 
-#if IS_ENABLED(CONFIG_TOUCHSCREEN_HEATMAP)
+#ifdef CONFIG_TOUCHSCREEN_HEATMAP
 	heatmap_read(&info->v4l2, ktime_to_ns(timestamp));
 #endif
 
-	pm_qos_update_request(&info->pm_qos_req, PM_QOS_DEFAULT_VALUE);
+	cpu_latency_qos_update_request(&info->pm_qos_req, PM_QOS_DEFAULT_VALUE);
 }
 
 /* Start the touch simulation */
@@ -1588,8 +1591,7 @@ static int touchsim_start(struct fts_touchsim *touchsim)
 	release_all_touches(info);
 
 	/* setup and start a hr timer to be fired every 120Hz(~8.333333ms) */
-	hrtimer_init(&touchsim->hr_timer, CLOCK_MONOTONIC, HRTIMER_MODE_ABS);
-	touchsim->hr_timer.function = touchsim_timer_cb;
+	hrtimer_setup(&touchsim->hr_timer, touchsim_timer_cb, CLOCK_MONOTONIC, HRTIMER_MODE_ABS);
 	hrtimer_start(&touchsim->hr_timer,
 			ns_to_ktime(TOUCHSIM_TIMER_INTERVAL_NS),
 			HRTIMER_MODE_ABS);
@@ -2724,7 +2726,7 @@ END:
  * 1 = FTS_HEATMAP_PARTIAL
  * 2 = FTS_HEATMAP_FULL
  */
-#if IS_ENABLED(CONFIG_TOUCHSCREEN_HEATMAP)
+#ifdef CONFIG_TOUCHSCREEN_HEATMAP
 static ssize_t heatmap_mode_store(struct device *dev,
 				struct device_attribute *attr,
 				const char *buf, size_t count)
@@ -2761,7 +2763,7 @@ static DEVICE_ATTR_RO(mode_active);
 static DEVICE_ATTR_RO(fw_file_test);
 static DEVICE_ATTR_RO(status);
 static DEVICE_ATTR_RW(stm_fts_cmd);
-#if IS_ENABLED(CONFIG_TOUCHSCREEN_HEATMAP)
+#ifdef CONFIG_TOUCHSCREEN_HEATMAP
 static DEVICE_ATTR_RW(heatmap_mode);
 #endif
 #ifdef USE_ONE_FILE_NODE
@@ -2816,7 +2818,7 @@ static struct attribute *fts_attr_group[] = {
 	&dev_attr_fw_file_test.attr,
 	&dev_attr_status.attr,
 	&dev_attr_stm_fts_cmd.attr,
-#if IS_ENABLED(CONFIG_TOUCHSCREEN_HEATMAP)
+#ifdef CONFIG_TOUCHSCREEN_HEATMAP
 	&dev_attr_heatmap_mode.attr,
 #endif
 #ifdef USE_ONE_FILE_NODE
@@ -3102,7 +3104,7 @@ static bool fts_enter_pointer_event_handler(struct fts_ts_info *info, unsigned
 
 
 
-#if IS_ENABLED(CONFIG_TOUCHSCREEN_OFFLOAD)
+#ifdef CONFIG_TOUCHSCREEN_OFFLOAD
 	info->offload.coords[touchId].x = x;
 	info->offload.coords[touchId].y = y;
 	info->offload.coords[touchId].major = major;
@@ -3135,7 +3137,7 @@ static bool fts_enter_pointer_event_handler(struct fts_ts_info *info, unsigned
 	input_report_abs(info->input_dev, ABS_MT_DISTANCE, distance);
 #endif
 
-#if IS_ENABLED(CONFIG_TOUCHSCREEN_OFFLOAD)
+#ifdef CONFIG_TOUCHSCREEN_OFFLOAD
 	}
 #endif
 	/* pr_info("%s :  Event 0x%02x - ID[%d], (x, y) = (%3d, %3d)
@@ -3199,7 +3201,7 @@ static bool fts_leave_pointer_event_handler(struct fts_ts_info *info, unsigned
 		return false;
 	}
 
-#if IS_ENABLED(CONFIG_TOUCHSCREEN_OFFLOAD)
+#ifdef CONFIG_TOUCHSCREEN_OFFLOAD
 	info->offload.coords[touchId].status = COORD_STATUS_INACTIVE;
 	if (!info->offload.offload_running) {
 #endif
@@ -3209,7 +3211,7 @@ static bool fts_leave_pointer_event_handler(struct fts_ts_info *info, unsigned
 	input_mt_report_slot_state(info->input_dev, tool, 0);
 	input_report_abs(info->input_dev, ABS_MT_TRACKING_ID, -1);
 
-#if IS_ENABLED(CONFIG_TOUCHSCREEN_OFFLOAD)
+#ifdef CONFIG_TOUCHSCREEN_OFFLOAD
 	}
 #endif
 
@@ -3910,7 +3912,7 @@ static bool fts_user_report_event_handler(struct fts_ts_info *info, unsigned
 	return false;
 }
 
-#if IS_ENABLED(CONFIG_TOUCHSCREEN_HEATMAP)
+#ifdef CONFIG_TOUCHSCREEN_HEATMAP
 static void heatmap_enable(void)
 {
 	u8 command[] = {FTS_CMD_SYSTEM, SYS_CMD_LOAD_DATA,
@@ -4142,7 +4144,7 @@ int fts_enable_grip(struct fts_ts_info *info, bool enable)
 	return res;
 }
 
-#if IS_ENABLED(CONFIG_TOUCHSCREEN_OFFLOAD)
+#ifdef CONFIG_TOUCHSCREEN_OFFLOAD
 
 static void fts_offload_resume_work(struct work_struct *work)
 {
@@ -4376,7 +4378,7 @@ static irqreturn_t fts_interrupt_handler(int irq, void *handle)
 	unsigned char *evt_data;
 	bool processed_pointer_event = false;
 
-#if IS_ENABLED(CONFIG_TOUCHSCREEN_OFFLOAD)
+#ifdef CONFIG_TOUCHSCREEN_OFFLOAD
 	struct touch_offload_frame *frame = NULL;
 #endif
 
@@ -4389,7 +4391,7 @@ static irqreturn_t fts_interrupt_handler(int irq, void *handle)
 	}
 
 	/* prevent CPU from entering deep sleep */
-	pm_qos_update_request(&info->pm_qos_req, 100);
+	cpu_latency_qos_update_request(&info->pm_qos_req, 100);
 
 	__pm_wakeup_event(info->wakesrc, jiffies_to_msecs(HZ));
 
@@ -4426,7 +4428,7 @@ static irqreturn_t fts_interrupt_handler(int irq, void *handle)
 		}
 	}
 
-#if IS_ENABLED(CONFIG_TOUCHSCREEN_OFFLOAD)
+#ifdef CONFIG_TOUCHSCREEN_OFFLOAD
 	if (!info->offload.offload_running) {
 #endif
 	mutex_lock(&info->input_report_mutex);
@@ -4436,7 +4438,7 @@ static irqreturn_t fts_interrupt_handler(int irq, void *handle)
 	input_sync(info->input_dev);
 	mutex_unlock(&info->input_report_mutex);
 
-#if IS_ENABLED(CONFIG_TOUCHSCREEN_OFFLOAD)
+#ifdef CONFIG_TOUCHSCREEN_OFFLOAD
 	}
 
 	if (processed_pointer_event) {
@@ -4465,7 +4467,7 @@ static irqreturn_t fts_interrupt_handler(int irq, void *handle)
 	/* TODO(spfetsch): if the mutual strength heatmap was already read into
 	 * the touch offload interface, use it here instead of reading again.
 	 */
-#if IS_ENABLED(CONFIG_TOUCHSCREEN_HEATMAP)
+#ifdef CONFIG_TOUCHSCREEN_HEATMAP
 	if (processed_pointer_event)
 		heatmap_read(&info->v4l2, ktime_to_ns(info->timestamp));
 #endif
@@ -4473,12 +4475,12 @@ static irqreturn_t fts_interrupt_handler(int irq, void *handle)
 	/* Disable the firmware motion filter during single touch */
 	update_motion_filter(info);
 
-	pm_qos_update_request(&info->pm_qos_req, PM_QOS_DEFAULT_VALUE);
+	cpu_latency_qos_update_request(&info->pm_qos_req, PM_QOS_DEFAULT_VALUE);
 	fts_set_bus_ref(info, FTS_BUS_REF_IRQ, false);
 	return IRQ_HANDLED;
 }
 
-#if IS_ENABLED(CONFIG_TOUCHSCREEN_OFFLOAD)
+#ifdef CONFIG_TOUCHSCREEN_OFFLOAD
 static void fts_offload_report(void *handle,
 			       struct TouchOffloadIocReport *report)
 {
@@ -4791,18 +4793,18 @@ static int fts_fw_update(struct fts_ts_info *info)
 	/* Read extinfo from display driver. Wait for up to ten seconds if
 	 * there is extinfo to read but is not yet available.
 	 */
-	ret = fts_read_panel_extinfo(info, 10);
-	if (ret < 0)
-		pr_err("%s: Failed or timed out during read of extinfo. ret=%d\n",
-		       __func__, ret);
+	// ret = fts_read_panel_extinfo(info, 10);
+	// if (ret < 0)
+	// 	pr_err("%s: Failed or timed out during read of extinfo. ret=%d\n",
+	// 	       __func__, ret);
 
 	/* Identify panel given extinfo that may have been received. */
-	ret = fts_identify_panel(info);
-	if (ret < 0) {
-		pr_err("%s: Encountered error while identifying display panel. ret=%d\n",
-		       __func__, ret);
-		goto out;
-	}
+	// ret = fts_identify_panel(info);
+	// if (ret < 0) {
+	// 	pr_err("%s: Encountered error while identifying display panel. ret=%d\n",
+	// 	       __func__, ret);
+	// 	goto out;
+	// }
 
 	pr_info("Fw Auto Update is starting...\n");
 
@@ -5233,15 +5235,6 @@ int fts_chip_powercycle(struct fts_ts_info *info)
 static int fts_init_sensing(struct fts_ts_info *info)
 {
 	int error = 0;
-
-#ifdef CONFIG_DRM
-	if (info->board->panel) {
-		/* register the suspend/resume function */
-		error |= drm_panel_notifier_register(info->board->panel,
-			&info->notifier);
-	} else
-		pr_info("%s: Skip DRM notifier registration\n", __func__);
-#endif
 	error |= fts_interrupt_install(info);	/* register event handler */
 	error |= fts_mode_handler(info, 0);	/* enable the features and
 						 * sensing */
@@ -5251,7 +5244,7 @@ static int fts_init_sensing(struct fts_ts_info *info)
 		pr_err("%s Init after Probe error (ERROR = %08X)\n",
 			__func__, error);
 
-#if IS_ENABLED(CONFIG_TOUCHSCREEN_HEATMAP)
+#ifdef CONFIG_TOUCHSCREEN_HEATMAP
 	heatmap_enable();
 #endif
 
@@ -5476,7 +5469,7 @@ static void fts_resume_work(struct work_struct *work)
 	if (!info->sensor_sleep)
 		return;
 
-#if IS_ENABLED(CONFIG_TOUCHSCREEN_TBN)
+#ifdef CONFIG_TOUCHSCREEN_TBN
 	if (info->tbn)
 		tbn_request_bus(info->tbn);
 #endif
@@ -5497,12 +5490,12 @@ static void fts_resume_work(struct work_struct *work)
 
 	info->sensor_sleep = false;
 
-#if IS_ENABLED(CONFIG_TOUCHSCREEN_HEATMAP)
+#ifdef CONFIG_TOUCHSCREEN_HEATMAP
 	/* heatmap must be enabled after every chip reset (fts_system_reset) */
 	heatmap_enable();
 #endif
 
-#if IS_ENABLED(CONFIG_TOUCHSCREEN_OFFLOAD)
+#ifdef CONFIG_TOUCHSCREEN_OFFLOAD
 	/* Set touch_offload configuration */
 	if (info->offload.offload_running) {
 		pr_info("%s: applying touch_offload settings.\n", __func__);
@@ -5555,7 +5548,7 @@ static void fts_suspend_work(struct work_struct *work)
 
 	fts_set_switch_gpio(info, FTS_SWITCH_GPIO_VALUE_SLPI_MASTER);
 
-#if IS_ENABLED(CONFIG_TOUCHSCREEN_TBN)
+#ifdef CONFIG_TOUCHSCREEN_TBN
 	if (info->tbn)
 		tbn_release_bus(info->tbn);
 #endif
@@ -5580,7 +5573,7 @@ static void fts_aggregate_bus_state(struct fts_ts_info *info)
 		return;
 
 	if (info->bus_refmask == 0) {
-#if IS_ENABLED(CONFIG_TOUCHSCREEN_OFFLOAD)
+#ifdef CONFIG_TOUCHSCREEN_OFFLOAD
 		cancel_delayed_work_sync(&info->offload_resume_work);
 #endif
 		queue_work(info->event_wq, &info->suspend_work);
@@ -5640,80 +5633,6 @@ int fts_set_bus_ref(struct fts_ts_info *info, u16 ref, bool enable)
 	return result;
 }
 
-/**
-  * Callback function used to detect the suspend/resume events generated by
-  * clicking the power button.
-  * This function schedule a suspend or resume work according to the event
-  * received.
-  */
-#ifdef CONFIG_DRM
-static int fts_screen_state_chg_callback(struct notifier_block *nb,
-					 unsigned long val, void *data)
-{
-	struct fts_ts_info *info = container_of(nb, struct fts_ts_info,
-						notifier);
-	struct drm_panel_notifier *evdata = data;
-	unsigned int blank;
-
-	if (val != DRM_PANEL_EVENT_BLANK && val != DRM_PANEL_EARLY_EVENT_BLANK)
-		return NOTIFY_DONE;
-
-	if (!info || !evdata || !evdata->data) {
-		pr_info("%s: Bad fts notifier call!\n", __func__);
-		return NOTIFY_DONE;
-	}
-
-	pr_debug("%s: fts notifier begin!\n", __func__);
-
-	blank = *(int *) (evdata->data);
-	switch (blank) {
-	case DRM_PANEL_BLANK_POWERDOWN:
-	case DRM_PANEL_BLANK_LP:
-		if (val == DRM_PANEL_EARLY_EVENT_BLANK) {
-			pr_debug("%s: BLANK\n", __func__);
-#ifdef SUPPORT_PROX_PALM
-			if (info->audio_status)
-				enable_prox_palm_only_mode(true);
-#endif
-			fts_set_bus_ref(info, FTS_BUS_REF_SCREEN_ON, false);
-#ifdef SUPPORT_PROX_PALM
-			release_all_touches(info);
-#endif
-		}
-		break;
-	case DRM_PANEL_BLANK_UNBLANK:
-		if (val == DRM_PANEL_EVENT_BLANK) {
-			pr_debug("%s: UNBLANK\n", __func__);
-#ifdef SUPPORT_PROX_PALM
-			if (info->audio_status)
-				enable_prox_palm_only_mode(false);
-#endif
-			fts_set_bus_ref(info, FTS_BUS_REF_SCREEN_ON, true);
-#ifdef SUPPORT_PROX_PALM
-			release_all_touches(info);
-#endif
-		}
-		break;
-	}
-
-#ifdef DYNAMIC_REFRESH_RATE
-	if (info->display_refresh_rate != evdata->refresh_rate) {
-		info->display_refresh_rate = evdata->refresh_rate;
-		if (gpio_is_valid(info->board->disp_rate_gpio))
-			gpio_set_value(info->board->disp_rate_gpio,
-				(info->display_refresh_rate == 90));
-		pr_debug("Refresh rate changed to %d Hz.\n",
-			info->display_refresh_rate);
-	}
-#endif
-
-	return NOTIFY_OK;
-}
-
-static struct notifier_block fts_noti_block = {
-	.notifier_call = fts_screen_state_chg_callback,
-};
-#endif
 
 /**
   * From the name of the power regulator get/put the actual regulator structs
@@ -6035,29 +5954,10 @@ static int parse_dt(struct device *dev, struct fts_hw_platform_data *bdata)
 	u32 coords[2];
 	u8 offload_id[4];
 
-	if (of_property_read_bool(np, "st,panel_map")) {
-		for (index = 0 ;; index++) {
-			retval = of_parse_phandle_with_fixed_args(np,
-								  "st,panel_map",
-								  1,
-								  index,
-								  &panelmap);
-			if (retval)
-				return -EPROBE_DEFER;
-			panel = of_drm_find_panel(panelmap.np);
-			of_node_put(panelmap.np);
-			if (!IS_ERR_OR_NULL(panel)) {
-				bdata->panel = panel;
-				bdata->initial_panel_index = panelmap.args[0];
-				break;
-			}
-		}
-	}
-
 	bdata->switch_gpio = of_get_named_gpio(np, "st,switch_gpio", 0);
 	pr_info("switch_gpio = %d\n", bdata->switch_gpio);
 
-	bdata->irq_gpio = of_get_named_gpio_flags(np, "st,irq-gpio", 0, NULL);
+	bdata->irq_gpio =  of_get_named_gpio(np, "st,irq-gpio", 0);
 	pr_info("irq_gpio = %d\n", bdata->irq_gpio);
 
 	retval = of_property_read_string(np, "st,regulator_dvdd", &name);
@@ -6081,16 +5981,13 @@ static int parse_dt(struct device *dev, struct fts_hw_platform_data *bdata)
 	}
 
 	if (of_property_read_bool(np, "st,reset-gpio")) {
-		bdata->reset_gpio = of_get_named_gpio_flags(np,
-							    "st,reset-gpio", 0,
-							    NULL);
+		bdata->reset_gpio = of_get_named_gpio(np, "st,reset-gpio", 0);
 		pr_info("reset_gpio = %d\n", bdata->reset_gpio);
 	} else
 		bdata->reset_gpio = GPIO_NOT_DEFINED;
 
 	if (of_property_read_bool(np, "st,disp-rate-gpio")) {
-		bdata->disp_rate_gpio =
-		    of_get_named_gpio_flags(np, "st,disp-rate-gpio", 0, NULL);
+		bdata->disp_rate_gpio = of_get_named_gpio(np, "st,disp-rate-gpio", 0);
 		pr_info("disp_rate_gpio = %d\n", bdata->disp_rate_gpio);
 	} else
 		bdata->disp_rate_gpio = GPIO_NOT_DEFINED;
@@ -6107,7 +6004,7 @@ static int parse_dt(struct device *dev, struct fts_hw_platform_data *bdata)
 		pr_info("Separate \"Save Golden MS Raw\" command from PI command.\n");
 	}
 
-#if IS_ENABLED(CONFIG_TOUCHSCREEN_HEATMAP)
+#ifdef CONFIG_TOUCHSCREEN_HEATMAP
 	bdata->heatmap_mode_full_init = false;
 	if (of_property_read_bool(np, "st,heatmap_mode_full")) {
 		bdata->heatmap_mode_full_init = true;
@@ -6166,7 +6063,7 @@ static int parse_dt(struct device *dev, struct fts_hw_platform_data *bdata)
   * registers the IRQ handler, suspend/resume callbacks, registers the device
   * to the linux input subsystem etc.
   */
-#ifdef I2C_INTERFACE
+#ifdef CONFIG_TOUCHSCREEN_STM_FTS_DOWNSTREAM_I2C
 static int fts_probe(struct i2c_client *client, const struct i2c_device_id *idp)
 {
 #else
@@ -6185,7 +6082,7 @@ static int fts_probe(struct spi_device *client)
 	pr_info("driver ver. %s\n", FTS_TS_DRV_VERSION);
 
 	pr_info("SET Bus Functionality :\n");
-#ifdef I2C_INTERFACE
+#ifdef CONFIG_TOUCHSCREEN_STM_FTS_DOWNSTREAM_I2C
 	pr_info("I2C interface...\n");
 	if (!i2c_check_functionality(client->adapter, I2C_FUNC_I2C)) {
 		pr_err("Unsupported I2C functionality\n");
@@ -6228,7 +6125,7 @@ static int fts_probe(struct spi_device *client)
 
 	dev_set_drvdata(info->dev, info);
 
-#if IS_ENABLED(CONFIG_TOUCHSCREEN_TBN)
+#ifdef CONFIG_TOUCHSCREEN_TBN
 	info->tbn = tbn_init(info->dev);
 	if (!info->tbn) {
 		pr_err("ERROR: failed to init tbn context\n");
@@ -6432,14 +6329,11 @@ static int fts_probe(struct spi_device *client)
 	info->grip_enabled = 0;
 
 	info->resume_bit = 1;
-#ifdef CONFIG_DRM
-	info->notifier = fts_noti_block;
-#endif
 
 	/* Set initial heatmap mode based on the device tree configuration.
 	 * Default is partial heatmap mode.
 	 */
-#if IS_ENABLED(CONFIG_TOUCHSCREEN_HEATMAP)
+#ifdef CONFIG_TOUCHSCREEN_HEATMAP
 	if (info->board->heatmap_mode_full_init)
 		info->heatmap_mode = FTS_HEATMAP_FULL;
 	else
@@ -6455,8 +6349,7 @@ static int fts_probe(struct spi_device *client)
 	 * but after the interrupt has been subscribed to, pm_qos_req
 	 * may be accessed before initialization in the interrupt handler.
 	 */
-	pm_qos_add_request(&info->pm_qos_req, PM_QOS_CPU_DMA_LATENCY,
-			PM_QOS_DEFAULT_VALUE);
+	cpu_latency_qos_add_request(&info->pm_qos_req, PM_QOS_DEFAULT_VALUE);
 
 	pr_info("Init Core Lib:\n");
 	initCore(info);
@@ -6469,7 +6362,7 @@ static int fts_probe(struct spi_device *client)
 		goto ProbeErrorExit_6;
 	}
 
-#if IS_ENABLED(CONFIG_TOUCHSCREEN_HEATMAP)
+#ifdef CONFIG_TOUCHSCREEN_HEATMAP
 	/*
 	 * Heatmap_probe must be called before irq routine is registered,
 	 * because heatmap_read is called from interrupt context.
@@ -6491,7 +6384,7 @@ static int fts_probe(struct spi_device *client)
 		goto ProbeErrorExit_6;
 #endif
 
-#if IS_ENABLED(CONFIG_TOUCHSCREEN_OFFLOAD)
+#ifdef CONFIG_TOUCHSCREEN_OFFLOAD
 	info->offload.caps.touch_offload_major_version =
 			TOUCH_OFFLOAD_INTERFACE_MAJOR_VERSION;
 	info->offload.caps.touch_offload_minor_version =
@@ -6529,27 +6422,27 @@ static int fts_probe(struct spi_device *client)
 	touch_offload_init(&info->offload);
 #endif
 
-#if defined(FW_UPDATE_ON_PROBE) && defined(FW_H_FILE)
-	pr_info("FW Update and Sensing Initialization:\n");
-	error = fts_fw_update(info);
-	if (error < OK) {
-		pr_err("Cannot execute fw upgrade the device ERROR %08X\n",
-			error);
-		error = -ENODEV;
-		goto ProbeErrorExit_7;
-	}
+// #if defined(FW_UPDATE_ON_PROBE) && defined(FW_H_FILE)
+// 	pr_info("FW Update and Sensing Initialization:\n");
+// 	error = fts_fw_update(info);
+// 	if (error < OK) {
+// 		pr_err("Cannot execute fw upgrade the device ERROR %08X\n",
+// 			error);
+// 		error = -ENODEV;
+// 		goto ProbeErrorExit_7;
+// 	}
 
-#else
-	pr_info("SET Auto Fw Update:\n");
-	info->fwu_workqueue = alloc_workqueue("fts-fwu-queue",
-					      WQ_UNBOUND | WQ_HIGHPRI |
-					      WQ_CPU_INTENSIVE, 1);
-	if (!info->fwu_workqueue) {
-		pr_err("ERROR: Cannot create fwu work thread\n");
-		goto ProbeErrorExit_7;
-	}
-	INIT_DELAYED_WORK(&info->fwu_work, fts_fw_update_auto);
-#endif
+// #else
+// 	pr_info("SET Auto Fw Update:\n");
+// 	info->fwu_workqueue = alloc_workqueue("fts-fwu-queue",
+// 					      WQ_UNBOUND | WQ_HIGHPRI |
+// 					      WQ_CPU_INTENSIVE, 1);
+// 	if (!info->fwu_workqueue) {
+// 		pr_err("ERROR: Cannot create fwu work thread\n");
+// 		goto ProbeErrorExit_7;
+// 	}
+// 	INIT_DELAYED_WORK(&info->fwu_work, fts_fw_update_auto);
+// #endif
 
 	pr_info("SET Device File Nodes:\n");
 	/* sysfs stuff */
@@ -6587,22 +6480,16 @@ ProbeErrorExit_7:
 	if(info->touchsim.wq)
 		destroy_workqueue(info->touchsim.wq);
 
-#ifdef CONFIG_DRM
-	if (info->board->panel)
-		drm_panel_notifier_unregister(info->board->panel,
-					      &info->notifier);
-#endif
-
-#if IS_ENABLED(CONFIG_TOUCHSCREEN_OFFLOAD)
+#ifdef CONFIG_TOUCHSCREEN_OFFLOAD
 	touch_offload_cleanup(&info->offload);
 #endif
 
-#if IS_ENABLED(CONFIG_TOUCHSCREEN_HEATMAP)
+#ifdef CONFIG_TOUCHSCREEN_HEATMAP
 	heatmap_remove(&info->v4l2);
 #endif
 
 ProbeErrorExit_6:
-	pm_qos_remove_request(&info->pm_qos_req);
+	cpu_latency_qos_remove_request(&info->pm_qos_req);
 	input_unregister_device(info->input_dev);
 
 ProbeErrorExit_5_1:
@@ -6639,11 +6526,11 @@ ProbeErrorExit_0:
   * Clear and free all the resources associated to the driver.
   * This function is called when the driver need to be removed.
   */
-#ifdef I2C_INTERFACE
-static int fts_remove(struct i2c_client *client)
+#ifdef CONFIG_TOUCHSCREEN_STM_FTS_DOWNSTREAM_I2C
+static void fts_remove(struct i2c_client *client)
 {
 #else
-static int fts_remove(struct spi_device *client)
+static void fts_remove(struct spi_device *client)
 {
 #endif
 
@@ -6654,7 +6541,7 @@ static int fts_remove(struct spi_device *client)
 
 	pr_info("%s\n", __func__);
 
-#if IS_ENABLED(CONFIG_TOUCHSCREEN_TBN)
+#ifdef CONFIG_TOUCHSCREEN_TBN
 	tbn_cleanup(info->tbn);
 #endif
 
@@ -6666,21 +6553,15 @@ static int fts_remove(struct spi_device *client)
 	/* remove interrupt and event handlers */
 	fts_interrupt_uninstall(info);
 
-#if IS_ENABLED(CONFIG_TOUCHSCREEN_OFFLOAD)
+#ifdef CONFIG_TOUCHSCREEN_OFFLOAD
 	touch_offload_cleanup(&info->offload);
 #endif
 
-#if IS_ENABLED(CONFIG_TOUCHSCREEN_HEATMAP)
+#ifdef CONFIG_TOUCHSCREEN_HEATMAP
 	heatmap_remove(&info->v4l2);
 #endif
 
-	pm_qos_remove_request(&info->pm_qos_req);
-
-#ifdef CONFIG_DRM
-	if (info->board->panel)
-		drm_panel_notifier_unregister(info->board->panel,
-					      &info->notifier);
-#endif
+	cpu_latency_qos_remove_request(&info->pm_qos_req);
 
 	/* unregister the device */
 	input_unregister_device(info->input_dev);
@@ -6717,8 +6598,6 @@ static int fts_remove(struct spi_device *client)
 
 	/* free all */
 	kfree(info);
-
-	return OK;
 }
 
 #ifdef CONFIG_PM
@@ -6780,7 +6659,7 @@ static struct of_device_id fts_of_match_table[] = {
 	{},
 };
 
-#ifdef I2C_INTERFACE
+#ifdef CONFIG_TOUCHSCREEN_STM_FTS_DOWNSTREAM_I2C
 static const struct i2c_device_id fts_device_id[] = {
 	{ FTS_TS_DRV_NAME, 0 },
 	{}
@@ -6818,7 +6697,7 @@ static struct spi_driver fts_spi_driver = {
 
 static int __init fts_driver_init(void)
 {
-#ifdef I2C_INTERFACE
+#ifdef CONFIG_TOUCHSCREEN_STM_FTS_DOWNSTREAM_I2C
 	return i2c_add_driver(&fts_i2c_driver);
 #else
 	return spi_register_driver(&fts_spi_driver);
@@ -6828,7 +6707,7 @@ static int __init fts_driver_init(void)
 static void __exit fts_driver_exit(void)
 {
 	pr_info("%s\n", __func__);
-#ifdef I2C_INTERFACE
+#ifdef CONFIG_TOUCHSCREEN_STM_FTS_DOWNSTREAM_I2C
 	i2c_del_driver(&fts_i2c_driver);
 #else
 	spi_unregister_driver(&fts_spi_driver);
