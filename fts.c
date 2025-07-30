@@ -4298,7 +4298,7 @@ static int parse_dt(struct device *dev, struct fts_hw_platform_data *bdata)
   * registers the IRQ handler, suspend/resume callbacks, registers the device
   * to the linux input subsystem etc.
   */
-#ifdef I2C_INTERFACE
+#ifdef CONFIG_TOUCHSCREEN_STM_FTS_DOWNSTREAM_I2C
 static int fts_probe(struct i2c_client *client)
 {
 #else
@@ -4317,7 +4317,7 @@ static int fts_probe(struct spi_device *client)
 	pr_debug("driver ver. %s\n", FTS_TS_DRV_VERSION);
 
 	pr_debug("SET Bus Functionality :\n");
-#ifdef I2C_INTERFACE
+#ifdef CONFIG_TOUCHSCREEN_STM_FTS_DOWNSTREAM_I2C
 	pr_debug("I2C interface...\n");
 	if (!i2c_check_functionality(client->adapter, I2C_FUNC_I2C)) {
 		pr_err("Unsupported I2C functionality\n");
@@ -4652,11 +4652,11 @@ ProbeErrorExit_0:
   * Clear and free all the resources associated to the driver.
   * This function is called when the driver need to be removed.
   */
-#ifdef I2C_INTERFACE
+#ifdef CONFIG_TOUCHSCREEN_STM_FTS_DOWNSTREAM_I2C
 static void fts_remove(struct i2c_client *client)
 {
 #else
-static int fts_remove(struct spi_device *client)
+static void fts_remove(struct spi_device *client)
 {
 #endif
 
@@ -4710,10 +4710,6 @@ static int fts_remove(struct spi_device *client)
 
 	/* free all */
 	kfree(info);
-
-#ifndef I2C_INTERFACE
-	return OK;
-#endif
 }
 
 /**
@@ -4729,7 +4725,7 @@ static struct of_device_id fts_of_match_table[] = {
 
 MODULE_DEVICE_TABLE(of, fts_of_match_table);
 
-#ifdef I2C_INTERFACE
+#ifdef CONFIG_TOUCHSCREEN_STM_FTS_DOWNSTREAM_I2C
 static const struct i2c_device_id fts_device_id[] = {
 	{ FTS_TS_DRV_NAME, 0 },
 	{}
@@ -4755,6 +4751,7 @@ static struct spi_driver fts_spi_driver = {
 	.probe			= fts_probe,
 	.remove			= fts_remove,
 };
+module_spi_driver(fts_spi_driver);
 #endif
 
 
@@ -4762,7 +4759,7 @@ static struct spi_driver fts_spi_driver = {
 
 // static int __init fts_driver_init(void)
 // {
-// #ifdef I2C_INTERFACE
+// #ifdef CONFIG_TOUCHSCREEN_STM_FTS_DOWNSTREAM_I2C
 // 	return i2c_add_driver(&fts_i2c_driver);
 // #else
 // 	return spi_register_driver(&fts_spi_driver);
@@ -4772,7 +4769,7 @@ static struct spi_driver fts_spi_driver = {
 // static void __exit fts_driver_exit(void)
 // {
 // 	pr_debug("%s\n", __func__);
-// #ifdef I2C_INTERFACE
+// #ifdef CONFIG_TOUCHSCREEN_STM_FTS_DOWNSTREAM_I2C
 // 	i2c_del_driver(&fts_i2c_driver);
 // #else
 // 	spi_unregister_driver(&fts_spi_driver);

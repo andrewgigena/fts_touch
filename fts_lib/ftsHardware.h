@@ -41,8 +41,7 @@
 						 * max allowed value is 2kB */
 
 /* PROTOCOL INFO */
-#define I2C_INTERFACE	/* /< comment if the chip use SPI bus */
-#ifdef I2C_INTERFACE
+#ifdef CONFIG_TOUCHSCREEN_STM_FTS_DOWNSTREAM_I2C
 #define I2C_SAD				0x49	/* /< slave address of the IC */
 #else
 #define SPI4_WIRE			/* /< comment if the master is SPI3
@@ -129,7 +128,7 @@
 						  * the FIFO can collect before
 						  * going in overflow in FTM5 */
 
-#ifdef I2C_INTERFACE
+#ifdef CONFIG_TOUCHSCREEN_STM_FTS_DOWNSTREAM_I2C
 #define FIFO_CMD_READALL		0x86	/* /< command to read all
 						  * the events in the FIFO */
 #else
@@ -142,7 +141,7 @@
 
 
 /* OP CODES FOR MEMORY (based on protocol) */
-#ifdef I2C_INTERFACE
+#ifdef CONFIG_TOUCHSCREEN_STM_FTS_DOWNSTREAM_I2C
 #define FTS_CMD_HW_REG_R	0xFA	/* /< command to read an hw register if
 					 * FTI */
 #define FTS_CMD_HW_REG_W	0xFA	/* /< command to write an hw register if
@@ -167,7 +166,7 @@
 #endif
 
 /* DUMMY BYTES DATA */
-#ifndef I2C_INTERFACE
+#ifndef CONFIG_TOUCHSCREEN_STM_FTS_DOWNSTREAM_I2C
 #define DUMMY_HW_REG		1	/* /< 1 if the first byte read from HW
 					 * register is dummy */
 #define DUMMY_FRAMEBUFFER	1	/* /< 1 if the first byte read from

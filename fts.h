@@ -334,7 +334,7 @@ struct fts_touchsim{
   */
 struct fts_ts_info {
 	struct device           *dev;	/* Pointer to the device */
-#ifdef I2C_INTERFACE
+#ifdef CONFIG_TOUCHSCREEN_STM_FTS_DOWNSTREAM_I2C
 	struct i2c_client       *client;	/* I2C client structure */
 #else
 	struct spi_device       *client;	/* SPI client structure */

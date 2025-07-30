@@ -1101,7 +1101,7 @@ static ssize_t fts_driver_test_write(struct file *file, const char __user *buf,
 			fileSize |= 0x00100000;
 #endif
 
-#ifdef I2C_INTERFACE
+#ifdef CONFIG_TOUCHSCREEN_STM_FTS_DOWNSTREAM_I2C
 			fileSize |= 0x00200000;
 #endif
 
@@ -2370,9 +2370,11 @@ END_DIAGNOSTIC:
 			goto ERROR;
 			break;
 
+#ifdef CONFIG_TOUCHSCREEN_STM_FTS_DOWNSTREAM_I2C
 		case CMD_CHANGE_SAD:
 			res = changeSAD(cmd[1]);
 			break;
+#endif
 
 		case CMD_TRIGGER_FORCECAL:
 			cmd[0] = CAL_MS_TOUCH | CAL_SS_TOUCH;
