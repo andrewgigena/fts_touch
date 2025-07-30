@@ -93,7 +93,8 @@ int updateGestureMask(u8 *mask, int size, int en)
 				mutex_unlock(&gestureMask_mutex);
 				return OK;
 			} else {
-				pr_err("updateGestureMask: Enable parameter Invalid! %d != %d or %d ERROR %08X",
+				pr_err("%s: Enable parameter Invalid! %d != %d or %d ERROR %08X\n",
+					__func__,
 					en,
 					FEAT_DISABLE, FEAT_ENABLE,
 					ERROR_OP_NOT_ALLOW);
@@ -224,7 +225,7 @@ int enterGestureMode(int reload)
 {
 	int res, ret;
 
-	res = fts_disableInterrupt();
+	res = fts_enableInterrupt(false);
 	if (res < OK) {
 		pr_err("enterGestureMode: ERROR %08X\n",
 			res | ERROR_DISABLE_INTER);
@@ -251,7 +252,7 @@ int enterGestureMode(int reload)
 
 	res = OK;
 END:
-	ret = fts_enableInterrupt();
+	ret = fts_enableInterrupt(true);
 	if (ret < OK) {
 		pr_err("enterGestureMode: fts_enableInterrupt ERROR %08X\n",
 			res | ERROR_ENABLE_INTER);

@@ -48,13 +48,6 @@ static int system_reseted_up;	/* /< flag checked during resume to understand
 static int system_reseted_down; /* /< flag checked during suspend to understand
 				 * if there was a system reset
 				 *  and restore the proper state */
-static int disable_irq_count = 1;	/* /< count the number of call to
-					 * disable_irq,
-					 * start with 1 because at the boot IRQ
-					 * are already disabled */
-spinlock_t fts_int;	/* /< spinlock to control the access to the
-			 * disable_irq_counter */
-
 
 /**
   * Initialize core variables of the library.
@@ -111,7 +104,7 @@ int fts_system_reset(void)
 	pr_info("System resetting...\n");
 	for (i = 0; i < RETRY_SYSTEM_RESET && res < 0; i++) {
 		resetErrorList();
-		fts_disableInterrupt();
+		fts_enableInterrupt(false);
 		/* disable interrupt before resetting to be able to get boot
 		 * events */
 
@@ -121,7 +114,7 @@ int fts_system_reset(void)
 						    data));
 		else {
 			gpio_set_value(reset_gpio, 0);
-			mdelay(10);
+			msleep(10);
 			gpio_set_value(reset_gpio, 1);
 			res = OK;
 		}
@@ -204,6 +197,8 @@ void setSystemResetedUp(int val)
 int pollForEvent(int *event_to_search, int event_bytes, u8 *readData, int
 		 time_to_wait)
 {
+	const u8 NO_RESPONSE = 0xFF;
+	const int POLL_SLEEP_TIME_MS = 5;
 	int i, find, retry, count_err;
 	int time_to_count;
 	int err_handling = OK;
@@ -215,16 +210,22 @@ int pollForEvent(int *event_to_search, int event_bytes, u8 *readData, int
 	find = 0;
 	retry = 0;
 	count_err = 0;
-	time_to_count = time_to_wait / TIMEOUT_RESOLUTION;
+	time_to_count = time_to_wait / POLL_SLEEP_TIME_MS;
 
 	startStopWatch(&clock);
 	while (find != 1 && retry < time_to_count &&
 		fts_writeReadU8UX(cmd[0], 0, 0, readData, FIFO_EVENT_SIZE,
 			DUMMY_FIFO)
 	       >= OK) {
-		/* Log of errors */
-		if (readData[0] == EVT_ID_ERROR) {
-			pr_debug("%s\n",
+		if (readData[0] == NO_RESPONSE ||
+		    readData[0] == EVT_ID_NOEVENT) {
+			/* No events available, so sleep briefly */
+			msleep(POLL_SLEEP_TIME_MS);
+			retry++;
+			continue;
+		} else if (readData[0] == EVT_ID_ERROR) {
+			/* Log of errors */
+			pr_err("%s\n",
 				 printHex("ERROR EVENT = ",
 					  readData,
 					  FIFO_EVENT_SIZE,
@@ -240,14 +241,13 @@ int pollForEvent(int *event_to_search, int event_bytes, u8 *readData, int
 				return err_handling;
 			}
 		} else {
-			if (readData[0] != EVT_ID_NOEVENT) {
-				pr_debug("%s\n",
-					 printHex("READ EVENT = ", readData,
-						  FIFO_EVENT_SIZE,
-						  temp,
-						  sizeof(temp)));
-				memset(temp, 0, 128);
-			}
+			pr_info("%s\n",
+				 printHex("READ EVENT = ", readData,
+					  FIFO_EVENT_SIZE,
+					  temp,
+					  sizeof(temp)));
+			memset(temp, 0, 128);
+
 			if (readData[0] == EVT_ID_CONTROLLER_READY &&
 			    event_to_search[0] != EVT_ID_CONTROLLER_READY) {
 				pr_err("pollForEvent: Unmanned Controller Ready Event! Setting reset flags...\n");
@@ -265,16 +265,13 @@ int pollForEvent(int *event_to_search, int event_bytes, u8 *readData, int
 				break;
 			}
 		}
-
-		retry++;
-		mdelay(TIMEOUT_RESOLUTION);
 	}
 	stopStopWatch(&clock);
 	if ((retry >= time_to_count) && find != 1) {
 		pr_err("pollForEvent: ERROR %08X\n", ERROR_TIMEOUT);
 		return ERROR_TIMEOUT;
 	} else if (find == 1) {
-		pr_debug("%s\n",
+		pr_info("%s\n",
 			 printHex("FOUND EVENT = ",
 				  readData,
 				  FIFO_EVENT_SIZE,
@@ -319,7 +316,23 @@ int checkEcho(u8 *cmd, int size)
 		event_to_search[1] = EVT_TYPE_STATUS_ECHO;
 		for (i = 2; i < size + 2; i++)
 			event_to_search[i] = cmd[i - 2];
-		ret = pollForEvent(event_to_search, size + 2, readData,
+		if ((cmd[0] == FTS_CMD_SYSTEM) &&
+			(cmd[1] == SYS_CMD_SPECIAL) &&
+			((cmd[2] == SPECIAL_FULL_PANEL_INIT) ||
+			(cmd[2] == SPECIAL_PANEL_INIT)))
+			ret = pollForEvent(event_to_search, size + 2, readData,
+				   TIMEOUT_ECHO_FPI);
+		else if ((cmd[0] == FTS_CMD_SYSTEM) &&
+			(cmd[1] == SYS_CMD_CX_TUNING))
+			ret = pollForEvent(event_to_search, size + 2, readData,
+				   TIMEOUT_ECHO_SINGLE_ENDED_SPECIAL_AUTOTUNE);
+		else if (cmd[0] == FTS_CMD_SYSTEM &&
+			 cmd[1] == SYS_CMD_SPECIAL &&
+			 cmd[2] == SPECIAL_FIFO_FLUSH)
+			ret = pollForEvent(event_to_search, size + 2, readData,
+				   TIMEOUT_ECHO_FLUSH);
+		else
+			ret = pollForEvent(event_to_search, size + 2, readData,
 				   TIEMOUT_ECHO);
 		if (ret < OK) {
 			pr_err("checkEcho: Echo Event not found! ERROR %08X\n",
@@ -630,7 +643,17 @@ int readSysInfo(int request)
 	u8ToU32(&data[index], &systemInfo.u32_cfgCrc);
 	index += 4;
 
-	index += 16;	/* skip reserved area */
+	index += 4;	/* skip reserved area */
+
+	systemInfo.u8_mpFlag = data[index++];
+	pr_info("MP FLAG = %02X\n", systemInfo.u8_mpFlag);
+
+	index += 3 + 4; /* +3 remaining from mp flag address */
+
+	systemInfo.u8_ssDetScanSet = data[index];
+	pr_info("SS Detect Scan Select = %d\n",
+		 systemInfo.u8_ssDetScanSet);
+	index += 4;
 
 	u8ToU16(&data[index], &systemInfo.u16_scrResX);
 	index += 2;
@@ -646,8 +669,13 @@ int readSysInfo(int request)
 	pr_info("Key Len = %d\n", systemInfo.u8_keyLen);
 	systemInfo.u8_forceLen = data[index++];
 	pr_info("Force Len = %d\n", systemInfo.u8_forceLen);
+	index += 8;
 
-	index += 40;	/* skip reserved area */
+	u8ToU32(&data[index], &systemInfo.u32_productionTimestamp);
+	pr_info("Production Timestamp = %08X\n",
+	systemInfo.u32_productionTimestamp);
+
+	index += 32;	/* skip reserved area */
 
 	u8ToU16(&data[index], &systemInfo.u16_dbgInfoAddr);
 	index += 2;
@@ -735,6 +763,18 @@ int readSysInfo(int request)
 	u8ToU16(&data[index], &systemInfo.u16_ssPrxRxBaselineAddr);
 	index += 2;
 
+	u8ToU16(&data[index], &systemInfo.u16_ssDetRawAddr);
+	index += 2;
+
+	u8ToU16(&data[index], &systemInfo.u16_ssDetFilterAddr);
+	index += 2;
+
+	u8ToU16(&data[index], &systemInfo.u16_ssDetStrenAddr);
+	index += 2;
+
+	u8ToU16(&data[index], &systemInfo.u16_ssDetBaselineAddr);
+	index += 2;
+
 	pr_info("Parsed %d bytes!\n", index);
 
 
@@ -807,99 +847,39 @@ int writeConfig(u16 offset, u8 *data, int len)
 	return OK;
 }
 
-/**
-  * Disable the interrupt so the ISR of the driver can not be called
-  * @return OK if success or an error code which specify the type of error
-  */
-int fts_disableInterrupt(void)
+/* Set the interrupt state
+ * @param enable Indicates whether interrupts should enabled.
+ * @return OK if success
+ */
+int fts_enableInterrupt(bool enable)
 {
+	struct fts_ts_info *info = NULL;
 	unsigned long flag;
 
-	if (getClient() != NULL) {
-		spin_lock_irqsave(&fts_int, flag);
-		pr_debug("Number of disable = %d\n", disable_irq_count);
-		if (disable_irq_count == 0) {
-			pr_debug("Executing Disable...\n");
-			disable_irq_nosync(getClient()->irq);
-			disable_irq_count++;
-		}
-		/* disable_irq is re-entrant so it is required to keep track
-		 * of the number of calls of this when reenabling */
-		spin_unlock_irqrestore(&fts_int, flag);
-		pr_debug("Interrupt Disabled!\n");
-		return OK;
-	} else {
-		pr_err("%s: Impossible get client irq... ERROR %08X\n",
-			__func__, ERROR_OP_NOT_ALLOW);
+	if (getClient() == NULL) {
+		pr_err("Cannot get client irq. Error = %08X\n",
+			ERROR_OP_NOT_ALLOW);
 		return ERROR_OP_NOT_ALLOW;
 	}
-}
+	info = dev_get_drvdata(&getClient()->dev);
 
+	spin_lock_irqsave(&info->fts_int, flag);
 
-/**
-  * Disable the interrupt async so the ISR of the driver can not be called
-  * @return OK if success or an error code which specify the type of error
-  */
-int fts_disableInterruptNoSync(void)
-{
-	if (getClient() != NULL) {
-		spin_lock_irq(&fts_int);
-		pr_debug("Number of disable = %d\n", disable_irq_count);
-		if (disable_irq_count == 0) {
-			pr_debug("Executing Disable...\n");
-			disable_irq_nosync(getClient()->irq);
-			disable_irq_count++;
-		}
-		/* disable_irq is re-entrant so it is required to keep track
-		 * of the number of calls of this when reenabling */
-
-		spin_unlock(&fts_int);
-		pr_debug("Interrupt No Sync Disabled!\n");
-		return OK;
-	} else {
-		pr_err("%s: Impossible get client irq... ERROR %08X\n",
-			__func__, ERROR_OP_NOT_ALLOW);
-		return ERROR_OP_NOT_ALLOW;
-	}
-}
-
-/**
-  * Reset the disable_irq count
-  * @return OK
-  */
-int fts_resetDisableIrqCount(void)
-{
-	disable_irq_count = 0;
-	return OK;
-}
-
-/**
-  * Enable the interrupt so the ISR of the driver can be called
-  * @return OK if success or an error code which specify the type of error
-  */
-int fts_enableInterrupt(void)
-{
-	unsigned long flag;
-
-	if (getClient() != NULL) {
-		spin_lock_irqsave(&fts_int, flag);
-		pr_debug("Number of re-enable = %d\n", disable_irq_count);
-		while (disable_irq_count > 0) {
-			/* loop N times according on the pending number of
-			 * disable_irq to truly re-enable the int */
-			pr_debug("Executing Enable...\n");
+	if (enable == info->irq_enabled)
+		pr_debug("Interrupt is already set (enable = %d).\n", enable);
+	else {
+		info->irq_enabled = enable;
+		if (enable) {
 			enable_irq(getClient()->irq);
-			disable_irq_count--;
+			pr_debug("Interrupt enabled.\n");
+		} else {
+			disable_irq_nosync(getClient()->irq);
+			pr_debug("Interrupt disabled.\n");
 		}
-
-		spin_unlock_irqrestore(&fts_int, flag);
-		pr_debug("Interrupt Enabled!\n");
-		return OK;
-	} else {
-		pr_err("%s: Impossible get client irq... ERROR %08X\n",
-			__func__, ERROR_OP_NOT_ALLOW);
-		return ERROR_OP_NOT_ALLOW;
 	}
+
+	spin_unlock_irqrestore(&info->fts_int, flag);
+	return OK;
 }
 
 /**
@@ -1154,7 +1134,7 @@ int writeHostDataMemory(u8 type, u8 *data, u8 msForceLen, u8 msSenseLen,
 	memcpy(&temp[16], data, size);
 
 	pr_info("%s: Write Host Data Memory in buffer...\n", __func__);
-	res = fts_writeU8UX(FTS_CMD_FRAMEBUFFER_R, BITS_16,
+	res = fts_writeU8UX(FTS_CMD_FRAMEBUFFER_W, BITS_16,
 			    ADDR_FRAMEBUFFER, temp, size +
 			    SYNCFRAME_DATA_HEADER);
 
@@ -1177,5 +1157,37 @@ int writeHostDataMemory(u8 type, u8 *data, u8 msForceLen, u8 msSenseLen,
 
 
 	pr_info("%s: write Host Data Memory FINISHED!\n", __func__);
+	return OK;
+}
+
+/*
+ * Save MP flag value into the flash
+ * @param mpflag Value to write in the MP Flag field
+ * @return OK if success or an error code which specify the type of error
+ */
+int saveMpFlag(u8 mpflag)
+{
+	int ret = OK;
+	u8 panelCfg = SAVE_PANEL_CONF;
+
+	pr_info("%s: Saving MP Flag = %02X\n", __func__, mpflag);
+	ret |= writeSysCmd(SYS_CMD_MP_FLAG, &mpflag, 1);
+	if (ret < OK)
+		pr_err("%s: Error while writing MP flag on ram... ERROR %08X\n",
+			__func__, ret);
+
+	ret |= writeSysCmd(SYS_CMD_SAVE_FLASH, &panelCfg, 1);
+	if (ret < OK)
+		pr_err("%s: Error while saving MP flag on flash... ERROR %08X\n",
+			__func__, ret);
+
+	ret |= readSysInfo(1);
+	if (ret < OK) {
+		pr_err("%s: Error while refreshing SysInfo... ERROR %08X\n",
+			__func__, ret);
+		return ret;
+	}
+
+	pr_info("%s: Saving MP Flag OK!\n", __func__);
 	return OK;
 }

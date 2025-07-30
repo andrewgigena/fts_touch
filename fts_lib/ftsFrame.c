@@ -158,7 +158,7 @@ int getMSFrame3(MSFrameType type, MutualSenseFrame *frame)
 
 	frame->node_data = NULL;
 
-	pr_info("%s: Starting to get frame %02X\n", __func__,
+	pr_debug("%s: Starting to get frame %02X\n", __func__,
 		 type);
 	switch (type) {
 	case MS_RAW:
@@ -233,7 +233,7 @@ LOAD_FRC:
 	frame->header.sense_node = sense_len;
 	frame->header.type = type;
 
-	pr_info("%s: Force_len = %d Sense_len = %d Offset = %04X\n",
+	pr_debug("%s: Force_len = %d Sense_len = %d Offset = %04X\n",
 		__func__, force_len, sense_len, offset);
 
 	frame->node_data = (short *)kmalloc(frame->node_data_size *
@@ -255,7 +255,7 @@ LOAD_FRC:
 	/* if you want to access one node i,j,
 	  * compute the offset like: offset = i*columns + j = > frame[i, j] */
 
-	pr_info("Frame acquired!\n");
+	pr_debug("Frame acquired!\n");
 	return frame->node_data_size;
 	/* return the number of data put inside frame */
 }
@@ -288,7 +288,7 @@ int getSSFrame3(SSFrameType type, SelfSenseFrame *frame)
 	}
 
 
-	pr_info("%s: Starting to get frame %02X\n", __func__, type);
+	pr_debug("%s: Starting to get frame %02X\n", __func__, type);
 	switch (type) {
 	case SS_RAW:
 		offset_force = systemInfo.u16_ssTchTxRawAddr;
@@ -340,6 +340,53 @@ int getSSFrame3(SSFrameType type, SelfSenseFrame *frame)
 		offset_force = systemInfo.u16_ssPrxTxBaselineAddr;
 		offset_sense = systemInfo.u16_ssPrxRxBaselineAddr;
 		break;
+	case SS_DETECT_RAW:
+		if (systemInfo.u8_ssDetScanSet == 0) {
+			offset_force = systemInfo.u16_ssDetRawAddr;
+			offset_sense = 0;
+			frame->header.sense_node = 0;
+		} else {
+			offset_sense = systemInfo.u16_ssDetRawAddr;
+			offset_force = 0;
+			frame->header.force_node = 0;
+		}
+		break;
+
+	case SS_DETECT_FILTER:
+		if (systemInfo.u8_ssDetScanSet == 0) {
+			offset_force = systemInfo.u16_ssDetFilterAddr;
+			offset_sense = 0;
+			frame->header.sense_node = 0;
+		} else {
+			offset_sense = systemInfo.u16_ssDetFilterAddr;
+			offset_force = 0;
+			frame->header.force_node = 0;
+		}
+		break;
+
+	case SS_DETECT_BASELINE:
+		if (systemInfo.u8_ssDetScanSet == 0) {
+			offset_force = systemInfo.u16_ssDetBaselineAddr;
+			offset_sense = 0;
+			frame->header.sense_node = 0;
+		} else {
+			offset_sense = systemInfo.u16_ssDetBaselineAddr;
+			offset_force = 0;
+			frame->header.force_node = 0;
+		}
+		break;
+
+	case SS_DETECT_STRENGTH:
+		if (systemInfo.u8_ssDetScanSet == 0) {
+			offset_force = systemInfo.u16_ssDetStrenAddr;
+			offset_sense = 0;
+			frame->header.sense_node = 0;
+		} else {
+			offset_sense = systemInfo.u16_ssDetStrenAddr;
+			offset_force = 0;
+			frame->header.force_node = 0;
+		}
+		break;
 
 	default:
 		pr_err("%s: Invalid type ERROR %08X\n", __func__,
@@ -349,7 +396,7 @@ int getSSFrame3(SSFrameType type, SelfSenseFrame *frame)
 
 	frame->header.type = type;
 
-	pr_info("%s: Force_len = %d Sense_len = %d Offset_force = %04X Offset_sense = %04X\n",
+	pr_debug("%s: Force_len = %d Sense_len = %d Offset_force = %04X Offset_sense = %04X\n",
 		__func__, frame->header.force_node,
 		frame->header.sense_node,
 		offset_force, offset_sense);
@@ -398,7 +445,7 @@ int getSSFrame3(SSFrameType type, SelfSenseFrame *frame)
 	/* if you want to access one node i,j,
 	  * the offset like: offset = i*columns + j = > frame[i, j] */
 
-	pr_info("Frame acquired!\n");
+	pr_debug("Frame acquired!\n");
 	return frame->header.force_node + frame->header.sense_node;
 	/* return the number of data put inside frame */
 }

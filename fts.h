@@ -35,13 +35,14 @@
 #include <linux/device.h>
 #include <linux/input/heatmap.h>
 #include <linux/pm_qos.h>
+#include <linux/input/touch_offload.h>
+#include <drm/drm_panel.h>
 #include "fts_lib/ftsSoftware.h"
 #include "fts_lib/ftsHardware.h"
 
 #ifdef CONFIG_TOUCHSCREEN_TBN
-#include "../touch_bus_negotiator.h"
+#include <linux/input/touch_bus_negotiator.h>
 #endif
-
 
 /****************** CONFIGURATION SECTION ******************/
 /** @defgroup conf_section	 Driver Configuration Section
@@ -51,9 +52,9 @@
   */
 /* **** CODE CONFIGURATION **** */
 #define FTS_TS_DRV_NAME		"fts"	/* driver name */
-#define FTS_TS_DRV_VERSION	"5.2.10_Google_B1"	/* driver version string
+#define FTS_TS_DRV_VERSION	"5.2.16.8"	/* driver version string
 							 * */
-#define FTS_TS_DRV_VER		0x05020A00	/* driver version u32 format */
+#define FTS_TS_DRV_VER		0x05021008	/* driver version u32 format */
 
 /* #define DEBUG */	/* /< define to print more logs in the kernel log
 			 * and better follow the code flow */
@@ -66,15 +67,19 @@
 			  * of the driver and fts_lib from command shell
 			  * (useful for enginering/debug operations) */
 
-/* Comment 2 flags to disable auto-tune in MP test and device boot-up */
-/* if defined allow to have some procedures at the boot or from file node to
-  * assure that touch works under any condition that usually are disabled in the
-  * MP stage of the project
-  */
-/* #define ENGINEERING_CODE */
-/* Initialization of CX memory allowed on the phone */
-/* #define COMPUTE_CX_ON_PHONE */
-/* #define PRE_SAVED_METHOD */
+/* If both COMPUTE_INIT_METHOD and PRE_SAVED_METHOD are not defined,
+ * driver will be automatically configured as GOLDEN_VALUE_METHOD
+ */
+#define COMPUTE_INIT_METHOD  /* Allow to compute init data on phone during
+			      * production
+			      */
+#define SKIP_PRODUCTION_TEST /* Allow to skip Production test */
+
+#ifndef COMPUTE_INIT_METHOD
+#define PRE_SAVED_METHOD /* Pre-Saved Method used
+			  * during production
+			  */
+#endif
 
 /*#define FW_H_FILE*/			/* include the FW data as header file */
 #ifdef FW_H_FILE
@@ -191,6 +196,8 @@
 					 * reported */
 /* **** END **** */
 
+/* #define SKIP_PRESSURE */
+
 /**@}*/
 /*********************************************************/
 
@@ -248,6 +255,17 @@ struct heatmap_report {
 					  * the shell in the normal file nodes
 					  **/
 
+/* Encapsulate display extinfo
+ *
+ * For some panels, it is insufficient to simply detect the panel ID and load
+ * one corresponding firmware. The display driver exposes extended info read
+ * from the display, but it is up to the touch driver to parse the data.
+ */
+struct fts_disp_extinfo {
+	bool is_read;
+	u8 size;
+	u8 *data;
+};
 
 /**
   * Struct which contains information about the HW platform and set up
@@ -258,11 +276,18 @@ struct fts_hw_platform_data {
 	int irq_gpio;	/* /< number of the gpio associated to the interrupt pin
 			 * */
 	int reset_gpio;	/* /< number of the gpio associated to the reset pin */
+	int disp_rate_gpio; /* disp_rate gpio: LOW=60Hz, HIGH=90Hz */
 	const char *vdd_reg_name;	/* /< name of the VDD regulator */
 	const char *avdd_reg_name;	/* /< name of the AVDD regulator */
 	const char *fw_name;
+	const char *limits_name;
+	bool sensor_inverted;
 	int x_axis_max;
 	int y_axis_max;
+	bool auto_fw_update;
+	bool heatmap_mode_full_init;
+	struct drm_panel *panel;
+	u32 initial_panel_index;
 };
 
 /* Bits for the bus reference mask */
@@ -272,6 +297,29 @@ enum {
 	FTS_BUS_REF_FW_UPDATE		= 0x04,
 	FTS_BUS_REF_SYSFS		= 0x08,
 	FTS_BUS_REF_FORCE_ACTIVE	= 0x10
+};
+
+/* Motion filter finite state machine (FSM) states
+ * FTS_MF_FILTERED        - default coordinate filtering
+ * FTS_MF_UNFILTERED      - unfiltered single-touch coordinates
+ * FTS_MF_FILTERED_LOCKED - filtered coordinates. Locked until touch is lifted.
+ */
+typedef enum {
+	FTS_MF_FILTERED		= 0,
+	FTS_MF_UNFILTERED	= 1,
+	FTS_MF_FILTERED_LOCKED	= 2
+} motion_filter_state_t;
+
+/* Heatmap mode selection
+ * FTS_HEATMAP_OFF	- no data read
+ * FTS_HEATMAP_PARTIAL	- read partial frame
+ *			(LOCAL_HEATMAP_WIDTH * LOCAL_HEATMAP_HEIGHT)
+ * FTS_HEATMAP_FULL	- read full mutual sense strength frame
+ */
+enum {
+	FTS_HEATMAP_OFF		= 0,
+	FTS_HEATMAP_PARTIAL	= 1,
+	FTS_HEATMAP_FULL	= 2
 };
 
 /*
@@ -351,10 +399,12 @@ struct fts_ts_info {
 
 	struct v4l2_heatmap v4l2;
 
-#ifndef FW_UPDATE_ON_PROBE
+#ifdef CONFIG_TOUCHSCREEN_OFFLOAD
+	struct touch_offload_context offload;
+#endif
+
 	struct delayed_work fwu_work;	/* Work for fw update */
 	struct workqueue_struct *fwu_workqueue;	/* Fw update work queue */
-#endif
 	event_dispatch_handler_t *event_dispatch_table;	/* Dispatch table */
 
 	struct attribute_group attrs;	/* SysFS attributes */
@@ -373,15 +423,22 @@ struct fts_ts_info {
 	struct regulator        *vdd_reg;	/* DVDD power regulator */
 	struct regulator        *avdd_reg;	/* AVDD power regulator */
 
+	spinlock_t fts_int;	/* Spinlock to protect interrupt toggling */
+	bool irq_enabled;	/* Interrupt state */
+
 	struct mutex bus_mutex;	/* Protect access to the bus */
 	unsigned int bus_refmask; /* References to the bus */
 
 	int resume_bit;	/* Indicate if screen off/on */
 	int fwupdate_stat;	/* Result of a fw update */
 	int reflash_fw;	/* Attempt to reflash fw */
+	int autotune_stat;	/* Attempt to autotune */
+
+	struct fts_disp_extinfo extinfo;	/* Display extended info */
 
 	struct notifier_block notifier;	/* Notify on suspend/resume */
-	bool sensor_sleep;	/* True if suspend called */
+	int display_refresh_rate;	/* Display rate in Hz */
+	bool sensor_sleep;		/* True if suspend called */
 	struct wakeup_source wakesrc;	/* Wake Lock struct */
 
 	/* input lock */
@@ -394,6 +451,17 @@ struct fts_ts_info {
 	int stylus_enabled;	/* Stylus mode */
 	int cover_enabled;	/* Cover mode */
 	int grip_enabled;	/* Grip mode */
+
+	int heatmap_mode;	/* heatmap mode*/
+
+	/* Stop changing motion filter and keep fw design */
+	bool use_default_mf;
+	/* Motion filter finite state machine (FSM) state */
+	motion_filter_state_t mf_state;
+	/* Time of initial single-finger touch down. This timestamp is used to
+	 * compute the duration a single finger is touched before it is lifted.
+	 */
+	ktime_t mf_downtime;
 
 #ifdef CONFIG_TOUCHSCREEN_TBN
 	struct tbn_context	*tbn;
@@ -415,6 +483,10 @@ struct fts_ts_info {
 	u8 io_extra_write_buf[WRITE_CHUNK + BITS_64 + DUMMY_FIFO];
 
 };
+
+/* DSI display function used to read panel extinfo */
+int dsi_panel_read_vendor_extinfo(struct drm_panel *panel, char *buffer,
+				  size_t len);
 
 int fts_chip_powercycle(struct fts_ts_info *info);
 extern int input_register_notifier_client(struct notifier_block *nb);

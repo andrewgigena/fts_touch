@@ -53,7 +53,7 @@ typedef enum {
   * @{
   */
 /* Size in bytes of System Info data */
-#define SYS_INFO_SIZE			208	/* Num bytes of die info */
+#define SYS_INFO_SIZE			216	/* Num bytes of die info */
 #define DIE_INFO_SIZE			16	/* Num bytes of external release
 						 * in config */
 #define EXTERNAL_RELEASE_INFO_SIZE	8	/* Num bytes of release info in
@@ -101,6 +101,8 @@ typedef struct {
 	u8 u8_releaseInfo[RELEASE_INFO_SIZE];	/* /< Release information */
 	u32 u32_fwCrc;	/* /< Crc of FW */
 	u32 u32_cfgCrc;	/* /< Crc of config */
+	u8 u8_mpFlag; /* /< MP Flag */
+	u8 u8_ssDetScanSet; /* /< Type of Detect Scan Selected */
 
 	u16 u16_scrResX;/* /< X resolution on main screen */
 	u16 u16_scrResY;/* /< Y resolution on main screen */
@@ -108,6 +110,7 @@ typedef struct {
 	u8 u8_scrRxLen;	/* /< Rx length */
 	u8 u8_keyLen;	/* /< Key Len */
 	u8 u8_forceLen;	/* /< Force Len */
+	u32 u32_productionTimestamp;	/* /< Production Timestamp */
 
 	u16 u16_dbgInfoAddr;	/* /< Offset of debug Info structure */
 
@@ -174,6 +177,14 @@ typedef struct {
 				  * frame */
 	u16 u16_ssPrxRxBaselineAddr;	/* /< Offset of SS proximity sense
 					 * baseline frame */
+
+	u16 u16_ssDetRawAddr;		/* /< Offset of SS detect raw frame */
+	u16 u16_ssDetFilterAddr;	/* /< Offset of SS detect filter
+					 * frame */
+	u16 u16_ssDetStrenAddr;		/* /< Offset of SS detect strength
+					 * frame */
+	u16 u16_ssDetBaselineAddr;	/* /< Offset of SS detect baseline
+					 * frame */
 } SysInfo;
 
 /** @}*/
@@ -195,13 +206,11 @@ int writeSysCmd(u8 sys_cmd, u8 *sett, int size);
 int readSysInfo(int request);
 int readConfig(u16 offset, u8 *outBuf, int len);
 int writeConfig(u16 offset, u8 *data, int len);
-int fts_disableInterrupt(void);
-int fts_disableInterruptNoSync(void);
-int fts_resetDisableIrqCount(void);
-int fts_enableInterrupt(void);
+int fts_enableInterrupt(bool enable);
 int fts_crc_check(void);
 int requestSyncFrame(u8 type);
 int setActiveScanFrequency(u32 freq);
 int writeHostDataMemory(u8 type, u8 *data, u8 msForceLen, u8 msSenseLen,
 			u8 ssForceLen, u8 ssSenseLen, int save);
+int saveMpFlag(u8 mpflag);
 #endif	/* FTS_CORE_H */

@@ -79,7 +79,7 @@ int getFWdata(const char *pathToFile, u8 **data, int *size)
 	pr_info("getFWdata starting ...\n");
 	if (strncmp(pathToFile, "NULL", 4) == 0) {
 		from = 1;
-		if (info != NULL && info->board->fw_name)
+		if (info != NULL && info->board)
 			path = (char *)info->board->fw_name;
 		else
 			path = PATH_FILE_FW;
@@ -265,55 +265,63 @@ int hold_m3(void)
 	ret = fts_writeU8UX(FTS_CMD_HW_REG_W, ADDR_SIZE_HW_REG,
 			    ADDR_SYSTEM_RESET, cmd, 1);
 	if (ret < OK) {
-		pr_err("hold_m3: ERROR %08X\n", ret);
+		pr_err("%s: ERROR %08X\n", __func__, ret);
 		return ret;
 	}
 	pr_info("Hold M3 DONE!\n");
 
-#if !defined(I2C_INTERFACE) && defined(SPI4_WIRE)
-	/* configure manually SPI4 because when no fw is running the chip use
-	 * SPI3 by default */
-	pr_info("Setting SPI4 mode...\n");
-	cmd[0] = 0x10;
-	ret = fts_writeU8UX(FTS_CMD_HW_REG_W, ADDR_SIZE_HW_REG,
-			    ADDR_GPIO_DIRECTION, cmd, 1);
-	if (ret < OK) {
-		pr_err("hold_m3: can not set gpio dir ERROR %08X\n", ret);
-		return ret;
-	}
+#if !defined(I2C_INTERFACE)
+	if (getClient() &&
+		(getClient()->mode & SPI_3WIRE) == 0) {
+		/* configure manually SPI4 because when no fw is running the
+		 * chip use SPI3 by default */
+		pr_info("Setting SPI4 mode...\n");
+		cmd[0] = 0x10;
+		ret = fts_writeU8UX(FTS_CMD_HW_REG_W, ADDR_SIZE_HW_REG,
+				    ADDR_GPIO_DIRECTION, cmd, 1);
+		if (ret < OK) {
+			pr_err("%s: can not set gpio dir ERROR %08X\n",
+				__func__, ret);
+			return ret;
+		}
 
-	cmd[0] = 0x02;
-	ret = fts_writeU8UX(FTS_CMD_HW_REG_W, ADDR_SIZE_HW_REG,
-			    ADDR_GPIO_PULLUP, cmd, 1);
-	if (ret < OK) {
-		pr_err("hold_m3: can not set gpio pull-up ERROR %08X\n", ret);
-		return ret;
-	}
+		cmd[0] = 0x02;
+		ret = fts_writeU8UX(FTS_CMD_HW_REG_W, ADDR_SIZE_HW_REG,
+				    ADDR_GPIO_PULLUP, cmd, 1);
+		if (ret < OK) {
+			pr_err("%s: can not set gpio pull-up ERROR %08X\n",
+				__func__, ret);
+			return ret;
+		}
 
-	cmd[0] = 0x07;
-	ret = fts_writeU8UX(FTS_CMD_HW_REG_W, ADDR_SIZE_HW_REG,
-			    ADDR_GPIO_CONFIG_REG2, cmd, 1);
-	if (ret < OK) {
-		pr_err("hold_m3: can not set gpio config ERROR %08X\n", ret);
-		return ret;
-	}
+		cmd[0] = 0x07;
+		ret = fts_writeU8UX(FTS_CMD_HW_REG_W, ADDR_SIZE_HW_REG,
+				    ADDR_GPIO_CONFIG_REG2, cmd, 1);
+		if (ret < OK) {
+			pr_err("%s: can not set gpio config ERROR %08X\n",
+				__func__, ret);
+			return ret;
+		}
 
-	cmd[0] = 0x30;
-	ret = fts_writeU8UX(FTS_CMD_HW_REG_W, ADDR_SIZE_HW_REG,
-			    ADDR_GPIO_CONFIG_REG0, cmd, 1);
-	if (ret < OK) {
-		pr_err("hold_m3: can not set gpio config ERROR %08X\n", ret);
-		return ret;
-	}
+		cmd[0] = 0x30;
+		ret = fts_writeU8UX(FTS_CMD_HW_REG_W, ADDR_SIZE_HW_REG,
+				    ADDR_GPIO_CONFIG_REG0, cmd, 1);
+		if (ret < OK) {
+			pr_err("%s: can not set gpio config ERROR %08X\n",
+				__func__, ret);
+			return ret;
+		}
 
-	cmd[0] = SPI4_MASK;
-	ret = fts_writeU8UX(FTS_CMD_HW_REG_W, ADDR_SIZE_HW_REG, ADDR_ICR, cmd,
-			    1);
-	if (ret < OK) {
-		pr_err("hold_m3: can not set spi4 mode ERROR %08X\n", ret);
-		return ret;
+		cmd[0] = SPI4_MASK;
+		ret = fts_writeU8UX(FTS_CMD_HW_REG_W, ADDR_SIZE_HW_REG,
+			ADDR_ICR, cmd, 1);
+		if (ret < OK) {
+			pr_err("%s: can not set spi4 mode ERROR %08X\n",
+				__func__, ret);
+			return ret;
+		}
+		mdelay(1);	/* wait for the GPIO to stabilize */
 	}
-	mdelay(1);	/* wait for the GPIO to stabilize */
 #endif
 
 	return OK;
@@ -491,6 +499,34 @@ END:
 	return res;
 }
 
+/*
+ * Enable UVLO and Auto Power Down Mode
+ * @return OK if success or an error code which specify the type of error
+ */
+int flash_enable_uvlo_autopowerdown(void)
+{
+	u8 cmd[6] = { FTS_CMD_HW_REG_W, 0x20, 0x00, 0x00,
+			FLASH_UVLO_ENABLE_CODE0,
+			FLASH_UVLO_ENABLE_CODE1 };
+	u8 cmd1[6] = { FTS_CMD_HW_REG_W, 0x20, 0x00, 0x00,
+			FLASH_AUTOPOWERDOWN_ENABLE_CODE0,
+			FLASH_AUTOPOWERDOWN_ENABLE_CODE1 };
+
+	pr_info("Command enable uvlo ...\n");
+	if (fts_write(cmd, ARRAY_SIZE(cmd)) < OK) {
+		pr_err("%s: ERROR %08X\n", __func__, ERROR_BUS_W);
+		return ERROR_BUS_W;
+	}
+	if (fts_write(cmd1, ARRAY_SIZE(cmd1)) < OK) {
+		pr_err("%s: ERROR %08X\n", __func__, ERROR_BUS_W);
+		return ERROR_BUS_W;
+	}
+
+	pr_info("Enable uvlo and flash auto power down  DONE!\n");
+
+	return OK;
+}
+
 /**
   * Unlock the flash to be programmed
   * @return OK if success or an error code which specify the type of error
@@ -500,9 +536,17 @@ int flash_unlock(void)
 	u8 cmd[6] = { FTS_CMD_HW_REG_W,	  0x20,	  0x00,	  0x00,
 		      FLASH_UNLOCK_CODE0, FLASH_UNLOCK_CODE1 };
 
+	u8 cmd1[6] = { FTS_CMD_HW_REG_W, 0x20, 0x00, 0x00,
+		       FLASH_UNLOCK_CODE2, FLASH_UNLOCK_CODE3 };
+
 	pr_info("Command unlock ...\n");
 	if (fts_write(cmd, ARRAY_SIZE(cmd)) < OK) {
 		pr_err("flash_unlock: ERROR %08X\n", ERROR_BUS_W);
+		return ERROR_BUS_W;
+	}
+
+	if (fts_write(cmd1, ARRAY_SIZE(cmd1)) < OK) {
+		pr_err("Command unlock: ERROR %08X\n", ERROR_BUS_W);
 		return ERROR_BUS_W;
 	}
 
@@ -657,8 +701,9 @@ int flash_erase_page_by_page(ErasePage keep_cx)
 int start_flash_dma(void)
 {
 	int status;
-	u8 cmd[6] = { FLASH_CMD_WRITE_REGISTER, 0x20, 0x00, 0x00,
-		      FLASH_DMA_CODE0,		FLASH_DMA_CODE1 };
+	u8 cmd[12] = { FLASH_CMD_WRITE_REGISTER, 0x20, 0x00, 0x00,
+		      0x6B, 0x00, 0x40, 0x42, 0x0F, 0x00, 0x00,
+			FLASH_DMA_CODE1 };
 
 	/* write the command to erase the flash */
 
@@ -863,7 +908,7 @@ int flash_burn(Firmware fw, int force_burn, int keep_cx)
 
 	/* Programming procedure start */
 start:
-	pr_info("Programming Procedure for flashing started:\n");
+	pr_info("Programming Procedure for flashing started:\n\n");
 
 	pr_info(" 1) SYSTEM RESET:\n");
 	res = fts_system_reset();
@@ -876,7 +921,7 @@ start:
 		if (res != (ERROR_SYSTEM_RESET_FAIL | ERROR_TIMEOUT))
 			return res | ERROR_FLASH_BURN_FAILED;
 	} else
-		pr_info("   system reset COMPLETED!\n");
+		pr_info("   system reset COMPLETED!\n\n");
 
 	msleep(100); /* required by HW for safe flash procedure */
 
@@ -887,29 +932,37 @@ start:
 		pr_err("    hold_m3 FAILED!\n");
 		return res | ERROR_FLASH_BURN_FAILED;
 	}
-	pr_info("    hold_m3 COMPLETED!\n");
+	pr_info("    hold_m3 COMPLETED!\n\n");
 
-	pr_info(" 3) FLASH UNLOCK:\n");
+	pr_info("3) ENABLE UVLO AND AUTO POWER DOWN MODE :\n");
+	res = flash_enable_uvlo_autopowerdown();
+	if (res < OK) {
+		pr_err("    flash_enable_uvlo_autopowerdown FAILED!\n");
+		return res | ERROR_FLASH_BURN_FAILED;
+	}
+	pr_err("    flash_enable_uvlo_autopowerdown COMPLETED!\n\n");
+
+	pr_info(" 4) FLASH UNLOCK:\n");
 	res = flash_unlock();
 	if (res < OK) {
 		pr_err("   flash unlock FAILED! ERROR %08X\n",
 			 ERROR_FLASH_BURN_FAILED);
 		return res | ERROR_FLASH_BURN_FAILED;
 	}
-	pr_info("   flash unlock COMPLETED!\n");
+	pr_info("   flash unlock COMPLETED!\n\n");
 
-	pr_info(" 4) FLASH ERASE UNLOCK:\n");
+	pr_info(" 5) FLASH ERASE UNLOCK:\n");
 	res = flash_erase_unlock();
 	if (res < 0) {
 		pr_err("   flash unlock FAILED! ERROR %08X\n",
 			 ERROR_FLASH_BURN_FAILED);
 		return res | ERROR_FLASH_BURN_FAILED;
 	}
-	pr_info("   flash unlock COMPLETED!\n");
+	pr_info("   flash unlock COMPLETED!\n\n");
 
-	pr_info(" 5) FLASH ERASE:\n");
+	pr_info(" 6) FLASH ERASE:\n");
 	if (keep_cx > 0) {
-		if (fw.sec2_size != 0)
+		if (fw.sec2_size != 0 && force_burn == CRC_CX)
 			res = flash_erase_page_by_page(SKIP_PANEL_INIT);
 		else
 			res = flash_erase_page_by_page(SKIP_PANEL_CX_INIT);
@@ -924,9 +977,9 @@ start:
 			 ERROR_FLASH_BURN_FAILED);
 		return res | ERROR_FLASH_BURN_FAILED;
 	}
-	pr_info("   flash erase COMPLETED!\n");
+	pr_info("   flash erase COMPLETED!\n\n");
 
-	pr_info(" 6) LOAD PROGRAM:\n");
+	pr_info(" 7) LOAD PROGRAM:\n");
 	res = fillFlash(FLASH_ADDR_CODE, &fw.data[0], fw.sec0_size);
 	if (res < OK) {
 		pr_err("   load program ERROR %08X\n",
@@ -935,7 +988,7 @@ start:
 	}
 	pr_info("   load program DONE!\n");
 
-	pr_info(" 7) LOAD CONFIG:\n");
+	pr_info(" 8) LOAD CONFIG:\n");
 	res = fillFlash(FLASH_ADDR_CONFIG, &(fw.data[fw.sec0_size]),
 			fw.sec1_size);
 	if (res < OK) {
@@ -946,7 +999,7 @@ start:
 	pr_info("   load config DONE!\n");
 
 	if (fw.sec2_size != 0 && (force_burn == CRC_CX || keep_cx <= 0)) {
-		pr_info(" 7.1) LOAD CX:\n");
+		pr_info(" 8.1) LOAD CX:\n");
 		res = fillFlash(FLASH_ADDR_CX,
 				&(fw.data[fw.sec0_size + fw.sec1_size]),
 				fw.sec2_size);
@@ -958,18 +1011,18 @@ start:
 		pr_info("   load cx DONE!\n");
 	}
 
-	pr_info("   Flash burn COMPLETED!\n");
+	pr_info("   Flash burn COMPLETED!\n\n");
 
-	pr_info(" 8) SYSTEM RESET:\n");
+	pr_info(" 9) SYSTEM RESET:\n");
 	res = fts_system_reset();
 	if (res < 0) {
 		pr_err("    system reset FAILED! ERROR %08X\n",
 			 ERROR_FLASH_BURN_FAILED);
 		return res | ERROR_FLASH_BURN_FAILED;
 	}
-	pr_info("   system reset COMPLETED!\n");
+	pr_info("   system reset COMPLETED!\n\n");
 
-	pr_info(" 9) FINAL CHECK:\n");
+	pr_info(" 10) FINAL CHECK:\n");
 	res = readSysInfo(0);
 	if (res < 0) {
 		pr_err("flash_burn: Unable to retrieve Chip INFO! ERROR %08X\n",

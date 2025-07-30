@@ -127,6 +127,11 @@ typedef enum {
 #define LOCKED_ONLY_MUTUAL_2	0x06	/* /< Only Mutual Sense scan mode */
 #define LOCKED_ONLY_MUTUAL_3	0x07	/* /< Only Mutual Sense scan mode at
 					 * highest freq */
+#define LOCKED_SINGLE_ENDED_ONLY_MUTUAL_0	0x20	/* /< Only Mutual Sense
+							 * scan mode at lowest
+							 * freq in single ended
+							 * mode
+							 */
 #define LOCKED_LP_DETECT	0x10	/* /< Low Power SS */
 #define LOCKED_LP_ACTIVE	0x11	/* /< Low Power MS */
 /** @}*/
@@ -210,6 +215,7 @@ typedef enum {
 #define SYS_CMD_SAVE_FLASH	0x05	/* /< Saving to flash */
 #define SYS_CMD_LOAD_DATA	0x06	/* /< Load Host data memory */
 #define SYS_CMD_SPECIAL_TUNING	0x08	/* /< Perform some special tuning */
+#define SYS_CMD_MP_FLAG		0x0C	/* /< Update value of MP flag in RAM */
 /** @} */
 
 /* System command settings */
@@ -334,6 +340,8 @@ typedef enum {
 						 * Force */
 #define LOAD_SENS_CAL_COEFF		0xC0	/* /< Load Sesitivity
 						 * Calibration Coefficients */
+#define LOAD_GOLDEN_MUTUAL_RAW  	0x80  	/* /< Load Goden Mutual Raw Data */
+
 /** @}*/
 
 /* Special Tuning */
@@ -380,13 +388,23 @@ typedef enum {
 #define EVT_TYPE_STATUS_ECHO		0x01	/* /< Echo event,
 						 * contain the first 5 bytes of
 						 * the FW command sent */
+#define EVT_TYPE_STATUS_GPIO_CHAR_DET	0x02	/*/< Gpio Charger detected */
 #define EVT_TYPE_STATUS_FRAME_DROP	0x03	/* /< Some frame was skipped
 						 * during the elaboration */
 #define EVT_TYPE_STATUS_FORCE_CAL	0x05	/* /< Force Calibration has
 						 * triggered */
 #define EVT_TYPE_STATUS_WATER		0x06	/* /< Water Mode */
-#define EVT_TYPE_STATUS_SS_RAW_SAT	0x07	/* /< Self Sense data saturated
-						 * */
+#define EVT_TYPE_STATUS_SS_RAW_SAT	0x07	/* /< Self Sense data saturated */
+#define EVT_TYPE_STATUS_PRE_WAT_DET	0x08	/* /< Previous Water Detect* */
+#define EVT_TYPE_STATUS_NOISE		0x09	/* /< Noise Status* */
+#define EVT_TYPE_STATUS_STIMPAD		0x0A	/* /< Stimpad Status* */
+#define EVT_TYPE_STATUS_NO_TOUCH	0x0B	/* /< No Touch Status* */
+#define EVT_TYPE_STATUS_IDLE		0x0C	/* /< Idle Status* */
+#define EVT_TYPE_STATUS_PALM_TOUCH	0x0D	/* /< Palm Touch Status* */
+#define EVT_TYPE_STATUS_GRIP_TOUCH	0x0E	/* /< Grip Touch Status* */
+#define EVT_TYPE_STATUS_GOLDEN_RAW_VAL	0x0F	/* /< Golden Raw
+						 * Validation Status */
+
 /** @} */
 
 /* USER TYPE */
@@ -408,6 +426,7 @@ typedef enum {
   * Types of EVT_ID_ERROR events reported by the FW
   * @{
   */
+#define EVT_TYPE_ERROR_HARD_FAULT	0x02	/* /< Hard Fault */
 #define EVT_TYPE_ERROR_WATCHDOG		0x06	/* /< Watchdog timer expired */
 
 #define EVT_TYPE_ERROR_CRC_CFG_HEAD	0x20	/* /< CRC error in the Config
@@ -481,6 +500,23 @@ typedef enum {
 
 /** @}*/
 
+/* @defgroup mp_flags MP Flags value
+ * @ingroup mp_test
+ * Specify the MP flags value which are written into the flash after performing
+ * a full panel initialization which pass all the tests.
+ * @{
+ */
+
+#define MP_FLAG_FACTORY		0xA5	/* /< Full Panel Init done in factory */
+#define MP_FLAG_BOOT		0x5A	/* /< Full Panel Init done at boot */
+#define MP_FLAG_OTHERS		0xFF   /* /< Full Panel Init done somewhere
+					* else
+					*/
+
+/** @}*/
+
+/** @}*/
+
 /* ERROR INFO */
 #define ERROR_DUMP_ROW_SIZE	32	/* /< number of rows of the error memory
 					 * */
@@ -495,7 +531,7 @@ typedef enum {
 #define TOUCH_TYPE_GLOVE	0x02	/* /< Glove touch */
 #define TOUCH_TYPE_STYLUS	0x03	/* /< Stylus touch */
 #define TOUCH_TYPE_PALM		0x04	/* /< Palm touch */
-#define TOUCH_TYPE_HOVER	0x05	/* /< Hovering touch */
+#define TOUCH_TYPE_HOVER	0x00	/* /< Hovering touch */
 
 /* Keys code */
 #define FTS_KEY_0		0x01	/* /< Key 0 bit */

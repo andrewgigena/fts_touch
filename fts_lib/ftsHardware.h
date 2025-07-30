@@ -41,17 +41,12 @@
 						 * max allowed value is 2kB */
 
 /* PROTOCOL INFO */
-#define I2C_INTERFACE	/* /< comment if the chip use SPI bus */
+#define SPI_INETERFACE
 #ifdef I2C_INTERFACE
 #define I2C_SAD				0x49	/* /< slave address of the IC */
 #else
-#define SPI4_WIRE			/* /< comment if the master is SPI3
-					 * wires
-					 * (MOSI and MISO share same line) */
 #define SPI_DELAY_CS			10	/* /< time in usec to wait
 						 * before rising the CS */
-#define SPI_CLOCK_FREQ			7000000	/* /< clock frequency in Hz of
-						 * the SPI bus */
 #endif
 
 #define IER_ENABLE			0x41	/* /< value to write in IER_ADDR
@@ -73,6 +68,23 @@
 /* FLASH UNLOCK PARAMETER */
 #define FLASH_UNLOCK_CODE0		0x25
 #define FLASH_UNLOCK_CODE1		0x20
+#define FLASH_UNLOCK_CODE2		0x6B
+#define FLASH_UNLOCK_CODE3		0x00
+
+/* FLASH UVLO ENABLE PARAMETER */
+#define FLASH_UVLO_ENABLE_CODE0		0x1B
+#define FLASH_UVLO_ENABLE_CODE1		0x66
+
+/* FLASH AUTOPOWERDOWN ENABLE PARAMETER */
+#define FLASH_AUTOPOWERDOWN_ENABLE_CODE0 0x68
+#define FLASH_AUTOPOWERDOWN_ENABLE_CODE1 0x13
+
+#define INFO_BLOCK_SIZE			16384
+#define INFO_BLOCK_LOCKDOWN		0x1800
+#define INFO_BLOCK_IOFF			0x19E8
+#define INFO_BLOCK_OSC			0x1EAC
+#define INFO_BLOCK_AOFFSET		0x1D48
+#define INFO_BLOCK_CG			0x1E08
 
 /* FLASH ERASE and DMA PARAMETER */
 #define FLASH_ERASE_START		0x80
@@ -147,6 +159,9 @@
 					 * FTI */
 #define FTS_CMD_HW_REG_W	0xFA	/* /< command to write an hw register if
 					 * FTI */
+#define FTS_CMD_FRAMEBUFFER_W	0xA6	/* /< command to write the framebuffer
+					 * if FTI
+					 */
 #define FTS_CMD_FRAMEBUFFER_R	0xA6	/* /< command to read the framebuffer if
 					 * FTI */
 #define FTS_CMD_CONFIG_R	0xA8	/* /< command to read the config memory
@@ -158,6 +173,9 @@
 					 * FTI */
 #define FTS_CMD_HW_REG_W	0xFA	/* /< command to write an hw register if
 					 * FTI */
+#define FTS_CMD_FRAMEBUFFER_W	0xA6	/* /< command to write the framebuffer
+					 * if FTI
+					 */
 #define FTS_CMD_FRAMEBUFFER_R	0xA7	/* /< command to read the framebuffer if
 					 * FTI */
 #define FTS_CMD_CONFIG_R	0xA9	/* /< command to read the config memory
@@ -210,7 +228,7 @@
 								 * register in
 								 * FTI */
 /* value to write in SYSTEM_RESET_ADDRESS to perform a system reset in FTM5 */
-#define SYSTEM_RESET_VALUE	0x80
+#define SYSTEM_RESET_VALUE	0x81
 
 
 /* REMAP REGISTER */
@@ -244,6 +262,10 @@
 								 * (SPI/I2C) */
 
 #define SPI4_MASK		0x02	/* /< bit to set spi4 */
+
+#define ADDR_FLASH_STATUS       ((u64)0x0000000020000068)
+#define ADDR_INFOBLOCK          ((u64)0x0000000000040000)
+
 
 /* CRC ADDR */
 #define ADDR_CRC		((u64)0x0000000020000078)	/* /< address of
