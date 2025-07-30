@@ -3,7 +3,7 @@
 
 #include <linux/device.h>
 #include <linux/hrtimer.h>
-#include <linux/i2c/fts.h>
+
 #if defined(CONFIG_FB)
 #include <linux/notifier.h>
 #include <linux/fb.h>
@@ -14,6 +14,9 @@
 #include <linux/atomic.h>
 
 #include <linux/printk.h>
+
+#include "i2c_fts.h"
+
 #define tsp_debug_dbg(dev, fmt, ...)	dev_dbg(dev, fmt, ## __VA_ARGS__)
 #define tsp_debug_info(dev, fmt, ...)	dev_info(dev, fmt, ## __VA_ARGS__)
 #define tsp_debug_err(dev, fmt, ...)	dev_err(dev, fmt, ## __VA_ARGS__)

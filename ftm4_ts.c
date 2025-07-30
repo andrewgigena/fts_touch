@@ -809,10 +809,10 @@ static unsigned char fts_event_handler_type_b(struct fts_ts_info *info,
 			info->fts_power_state );
 #endif
 
-		if (info->fts_power_state == FTS_POWER_STATE_LOWPOWER)
-			EventID = data[EventNum * FTS_EVENT_SIZE] & 0xFF;
-		else
-			EventID = data[EventNum * FTS_EVENT_SIZE] & 0x0F;
+	if (info->fts_power_state == FTS_POWER_STATE_LOWPOWER)
+		EventID = data[EventNum * FTS_EVENT_SIZE] & 0xFF;
+	else
+		EventID = data[EventNum * FTS_EVENT_SIZE] & 0x0F;
 
 		if ((EventID >= 3) && (EventID <= 5)) {
 			LastLeftEvent = 0;
@@ -1355,7 +1355,7 @@ static int fts_parse_dt(struct i2c_client *client)
 	pdata->gpio = of_get_named_gpio(np, "stm,irq_gpio", 0);
 	if (gpio_is_valid(pdata->gpio)) {
 		retval = gpio_request_one(pdata->gpio,
-					GPIOF_DIR_IN, "stm,tsp_int");
+					GPIOF_IN, "stm,tsp_int");
 		if (retval) {
 			tsp_debug_err(dev,
 						"Unable to request tsp_int [%d]\n",
@@ -2252,7 +2252,7 @@ static struct i2c_driver fts_i2c_driver = {
 	.probe = fts_probe,
 	.remove = fts_remove,
 	.shutdown = fts_shutdown,
-#if (!defined(CONFIG_FB))
+#if 0 // (!defined(CONFIG_FB))
 	.suspend = fts_suspend,
 	.resume = fts_resume,
 #endif

@@ -838,10 +838,10 @@ static int fts_fw_update(struct fts_ts_info *info)
 	}
 
 	if (info->test_fwpath[0]) {
-		strlcpy(fw_path, &info->test_fwpath[0], sizeof(fw_path));
+		strncpy(fw_path, &info->test_fwpath[0], sizeof(fw_path));
 	} else if(info->board->firmware_name) {
 		/* A pointer and size of buffer for binary file */
-		strlcpy(fw_path, &info->board->firmware_name[0], sizeof(fw_path));
+		strncpy(fw_path, &info->board->firmware_name[0], sizeof(fw_path));
 	} else {
 		tsp_debug_err(info->dev, "%s : no firmware file\n", __func__);
 		return -EPERM;

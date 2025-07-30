@@ -33,7 +33,6 @@
 #define _LINUX_FTS_I2C_H_
 
 #include <linux/device.h>
-#include <linux/input/heatmap.h>
 #include <linux/pm_qos.h>
 #include "fts_lib/ftsSoftware.h"
 #include "fts_lib/ftsHardware.h"
@@ -194,6 +193,7 @@
 /**@}*/
 /*********************************************************/
 
+#if 0 // no heat map
 /* **** LOCAL HEATMAP FEATURE *** */
 #define LOCAL_HEATMAP_WIDTH 7
 #define LOCAL_HEATMAP_HEIGHT 7
@@ -212,6 +212,7 @@ struct heatmap_report {
 	strength_t data[LOCAL_HEATMAP_WIDTH * LOCAL_HEATMAP_HEIGHT];
 } __attribute__((packed));
 /* **** END **** */
+#endif
 
 /*
   * Configuration mode
@@ -349,8 +350,6 @@ struct fts_ts_info {
 
 	struct pm_qos_request pm_qos_req;
 
-	struct v4l2_heatmap v4l2;
-
 #ifndef FW_UPDATE_ON_PROBE
 	struct delayed_work fwu_work;	/* Work for fw update */
 	struct workqueue_struct *fwu_workqueue;	/* Fw update work queue */
@@ -382,7 +381,7 @@ struct fts_ts_info {
 
 	struct notifier_block notifier;	/* Notify on suspend/resume */
 	bool sensor_sleep;	/* True if suspend called */
-	struct wakeup_source wakesrc;	/* Wake Lock struct */
+	struct wakeup_source *wakesrc;	/* Wake Lock struct */
 
 	/* input lock */
 	struct mutex input_report_mutex;	/* Mutex for pressure report */
