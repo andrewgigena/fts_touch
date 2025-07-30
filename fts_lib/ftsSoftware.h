@@ -25,6 +25,8 @@
 #include <linux/types.h>
 #include "ftsHardware.h"
 
+#define SUPPORT_PROX_PALM
+
 /* signed type */
 typedef signed char i8;	/* /< basic type that represent one signed byte (or 8
 			 * bits) */
@@ -404,6 +406,11 @@ typedef enum {
 #define EVT_TYPE_STATUS_GRIP_TOUCH	0x0E	/* /< Grip Touch Status* */
 #define EVT_TYPE_STATUS_GOLDEN_RAW_VAL	0x0F	/* /< Golden Raw
 						 * Validation Status */
+#define EVT_TYPE_STATUS_GOLDEN_RAW_ERR	0x16	/* /< Golden Raw
+						 * Data Abnormal */
+#ifdef SUPPORT_PROX_PALM
+#define EVT_TYPE_STATUS_PROX_PALM	0x18	/* /< Proximity: Palm**/
+#endif
 
 /** @} */
 
@@ -465,6 +472,9 @@ typedef enum {
 						 * Subsection Area */
 
 #define EVT_TYPE_ERROR_ESD		0xF0	/* /< ESD error */
+
+#define EVT_TYPE_ERROR_OSC_TRIM		0x24	/* /< OSC Trim error */
+#define EVT_TYPE_ERROR_AOFFSET_TRIM	0x29	/* /< Aoffset Trim error */
 /** @}*/
 
 
@@ -532,6 +542,7 @@ typedef enum {
 #define TOUCH_TYPE_STYLUS	0x03	/* /< Stylus touch */
 #define TOUCH_TYPE_PALM		0x04	/* /< Palm touch */
 #define TOUCH_TYPE_HOVER	0x00	/* /< Hovering touch */
+#define TOUCH_TYPE_GRIP		0x07	/* /< Hovering touch */
 
 /* Keys code */
 #define FTS_KEY_0		0x01	/* /< Key 0 bit */

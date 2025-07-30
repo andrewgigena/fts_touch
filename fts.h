@@ -33,16 +33,20 @@
 #define _LINUX_FTS_I2C_H_
 
 #include <linux/device.h>
+#if IS_ENABLED(CONFIG_TOUCHSCREEN_HEATMAP)
 #include <linux/input/heatmap.h>
+#endif
 #include <linux/pm_qos.h>
 #include <linux/input/touch_offload.h>
 #include <drm/drm_panel.h>
 #include "fts_lib/ftsSoftware.h"
 #include "fts_lib/ftsHardware.h"
 
-#ifdef CONFIG_TOUCHSCREEN_TBN
+#if IS_ENABLED(CONFIG_TOUCHSCREEN_TBN)
 #include <linux/input/touch_bus_negotiator.h>
 #endif
+
+#undef DYNAMIC_REFRESH_RATE
 
 /****************** CONFIGURATION SECTION ******************/
 /** @defgroup conf_section	 Driver Configuration Section
@@ -52,9 +56,8 @@
   */
 /* **** CODE CONFIGURATION **** */
 #define FTS_TS_DRV_NAME		"fts"	/* driver name */
-#define FTS_TS_DRV_VERSION	"5.2.16.8"	/* driver version string
-							 * */
-#define FTS_TS_DRV_VER		0x05021008	/* driver version u32 format */
+#define FTS_TS_DRV_VERSION	"5.2.16.15"	/* driver version string */
+#define FTS_TS_DRV_VER		0x0502100F	/* driver version u32 format */
 
 /* #define DEBUG */	/* /< define to print more logs in the kernel log
 			 * and better follow the code flow */
@@ -63,6 +66,10 @@
 #define pr_fmt(fmt) "[ FTS ] " fmt
 #endif
 
+#define PINCTRL_STATE_ACTIVE    "pmx_ts_active"
+#define PINCTRL_STATE_SUSPEND   "pmx_ts_suspend"
+#define PINCTRL_STATE_RELEASE   "pmx_ts_release"
+
 #define DRIVER_TEST	/* /< if defined allow to use and test special functions
 			  * of the driver and fts_lib from command shell
 			  * (useful for enginering/debug operations) */
@@ -70,16 +77,16 @@
 /* If both COMPUTE_INIT_METHOD and PRE_SAVED_METHOD are not defined,
  * driver will be automatically configured as GOLDEN_VALUE_METHOD
  */
-#define COMPUTE_INIT_METHOD  /* Allow to compute init data on phone during
+/*#define COMPUTE_INIT_METHOD   Allow to compute init data on phone during
 			      * production
 			      */
 #define SKIP_PRODUCTION_TEST /* Allow to skip Production test */
 
-#ifndef COMPUTE_INIT_METHOD
-#define PRE_SAVED_METHOD /* Pre-Saved Method used
+//#ifndef COMPUTE_INIT_METHOD
+/*#define PRE_SAVED_METHOD  Pre-Saved Method used
 			  * during production
 			  */
-#endif
+//#endif
 
 /*#define FW_H_FILE*/			/* include the FW data as header file */
 #ifdef FW_H_FILE
@@ -200,7 +207,7 @@
 
 /**@}*/
 /*********************************************************/
-
+#if IS_ENABLED(CONFIG_TOUCHSCREEN_HEATMAP)
 /* **** LOCAL HEATMAP FEATURE *** */
 #define LOCAL_HEATMAP_WIDTH 7
 #define LOCAL_HEATMAP_HEIGHT 7
@@ -219,7 +226,7 @@ struct heatmap_report {
 	strength_t data[LOCAL_HEATMAP_WIDTH * LOCAL_HEATMAP_HEIGHT];
 } __attribute__((packed));
 /* **** END **** */
-
+#endif
 /*
   * Configuration mode
   *
@@ -281,13 +288,20 @@ struct fts_hw_platform_data {
 	const char *avdd_reg_name;	/* /< name of the AVDD regulator */
 	const char *fw_name;
 	const char *limits_name;
-	bool sensor_inverted;
+	bool sensor_inverted_x;
+	bool sensor_inverted_y;
 	int x_axis_max;
 	int y_axis_max;
 	bool auto_fw_update;
+	bool separate_save_golden_ms_raw_cmd;
+#if IS_ENABLED(CONFIG_TOUCHSCREEN_HEATMAP)
 	bool heatmap_mode_full_init;
+#endif
 	struct drm_panel *panel;
 	u32 initial_panel_index;
+	u32 *force_pi_cfg_ver;
+	u32 offload_id;
+	u8 fw_grip_area;
 };
 
 /* Bits for the bus reference mask */
@@ -296,7 +310,10 @@ enum {
 	FTS_BUS_REF_IRQ			= 0x02,
 	FTS_BUS_REF_FW_UPDATE		= 0x04,
 	FTS_BUS_REF_SYSFS		= 0x08,
-	FTS_BUS_REF_FORCE_ACTIVE	= 0x10
+	FTS_BUS_REF_FORCE_ACTIVE	= 0x10,
+#ifdef SUPPORT_PROX_PALM
+	FTS_BUS_REF_PHONE_CALL		= 0x20,
+#endif
 };
 
 /* Motion filter finite state machine (FSM) states
@@ -316,12 +333,13 @@ typedef enum {
  *			(LOCAL_HEATMAP_WIDTH * LOCAL_HEATMAP_HEIGHT)
  * FTS_HEATMAP_FULL	- read full mutual sense strength frame
  */
+#if IS_ENABLED(CONFIG_TOUCHSCREEN_HEATMAP)
 enum {
 	FTS_HEATMAP_OFF		= 0,
 	FTS_HEATMAP_PARTIAL	= 1,
 	FTS_HEATMAP_FULL	= 2
 };
-
+#endif
 /*
   * Forward declaration
   */
@@ -396,11 +414,13 @@ struct fts_ts_info {
 	struct completion bus_resumed;		/* resume_work complete */
 
 	struct pm_qos_request pm_qos_req;
-
+#if IS_ENABLED(CONFIG_TOUCHSCREEN_HEATMAP)
 	struct v4l2_heatmap v4l2;
+#endif
 
-#ifdef CONFIG_TOUCHSCREEN_OFFLOAD
+#if IS_ENABLED(CONFIG_TOUCHSCREEN_OFFLOAD)
 	struct touch_offload_context offload;
+	struct delayed_work offload_resume_work;
 #endif
 
 	struct delayed_work fwu_work;	/* Work for fw update */
@@ -412,6 +432,8 @@ struct fts_ts_info {
 	unsigned int mode;	/* Device operating mode */
 				/* MSB - active or lpm */
 	unsigned long touch_id;	/* Bitmask for touch id */
+	unsigned long palm_touch_mask; /* Bitmask for palm touch */
+	unsigned long grip_touch_mask; /* Bitmask for grip touch */
 #ifdef STYLUS_MODE
 	unsigned long stylus_id;	/* Bitmask for the stylus */
 #endif
@@ -422,6 +444,11 @@ struct fts_ts_info {
 	struct fts_hw_platform_data     *board;	/* HW info from device tree */
 	struct regulator        *vdd_reg;	/* DVDD power regulator */
 	struct regulator        *avdd_reg;	/* AVDD power regulator */
+
+	struct pinctrl       *ts_pinctrl;		/* touch pin control state holder */
+	struct pinctrl_state *pinctrl_state_active;	/* Active pin state*/
+	struct pinctrl_state *pinctrl_state_suspend;	/* Suspend pin state*/
+	struct pinctrl_state *pinctrl_state_release;	/* Release pin state*/
 
 	spinlock_t fts_int;	/* Spinlock to protect interrupt toggling */
 	bool irq_enabled;	/* Interrupt state */
@@ -436,13 +463,17 @@ struct fts_ts_info {
 
 	struct fts_disp_extinfo extinfo;	/* Display extended info */
 
+#ifdef CONFIG_DRM
 	struct notifier_block notifier;	/* Notify on suspend/resume */
+#endif
+#ifdef DYNAMIC_REFRESH_RATE
 	int display_refresh_rate;	/* Display rate in Hz */
+#endif
 	bool sensor_sleep;		/* True if suspend called */
-	struct wakeup_source wakesrc;	/* Wake Lock struct */
+	struct wakeup_source *wakesrc;	/* Wake Lock struct */
 
 	/* input lock */
-	struct mutex input_report_mutex;	/* Mutex for pressure report */
+	struct mutex input_report_mutex;	/* Mutex for input report */
 
 	/* switches for features */
 	int gesture_enabled;	/* Gesture during suspend */
@@ -451,9 +482,14 @@ struct fts_ts_info {
 	int stylus_enabled;	/* Stylus mode */
 	int cover_enabled;	/* Cover mode */
 	int grip_enabled;	/* Grip mode */
-
+#if IS_ENABLED(CONFIG_TOUCHSCREEN_HEATMAP)
 	int heatmap_mode;	/* heatmap mode*/
-
+#endif
+#ifdef SUPPORT_PROX_PALM
+	int audio_status;
+	int prox_palm_status;
+	bool pm_suspend_during_phone_call;
+#endif
 	/* Stop changing motion filter and keep fw design */
 	bool use_default_mf;
 	/* Motion filter finite state machine (FSM) state */
@@ -463,7 +499,7 @@ struct fts_ts_info {
 	 */
 	ktime_t mf_downtime;
 
-#ifdef CONFIG_TOUCHSCREEN_TBN
+#if IS_ENABLED(CONFIG_TOUCHSCREEN_TBN)
 	struct tbn_context	*tbn;
 #endif
 
@@ -474,6 +510,8 @@ struct fts_ts_info {
 
 	/* Touch simulation details */
 	struct fts_touchsim touchsim;
+
+	u8 scanning_frequency;
 
 	/* Preallocated i/o read buffer */
 	u8 io_read_buf[READ_CHUNK + DUMMY_FIFO];

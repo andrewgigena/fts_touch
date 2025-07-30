@@ -361,6 +361,8 @@
 #define CMD_CHANGE_SAD				0x70	/* /< Allow to change
 							 * the SAD address (for
 							 * debugging) */
+#define CMD_INFOBLOCK_STATUS			0x61	/* /< Check for Info
+							 * block error */
 
 /* Debug functionalities requested by Google for B1 Project */
 #define CMD_TRIGGER_FORCECAL			0x80	/* /< Trigger manually
@@ -788,6 +790,8 @@ static ssize_t fts_driver_test_write(struct file *file, const char __user *buf,
 	MutualSenseFrame frameMS;
 	MutualSenseFrame deltas;
 	SelfSenseFrame frameSS;
+	u8 error_to_search[2] = { EVT_TYPE_ERROR_OSC_TRIM,
+				  EVT_TYPE_ERROR_AOFFSET_TRIM };
 
 	DataHeader dataHead;
 	MutualSenseData compData;
@@ -800,6 +804,7 @@ static ssize_t fts_driver_test_write(struct file *file, const char __user *buf,
 	int meanNorm = 0, meanEdge = 0;
 
 	u64 address;
+	u16 ito_max_val[2] = {0x00};
 
 	Firmware fw;
 	LimitFile lim;
@@ -1093,10 +1098,10 @@ static ssize_t fts_driver_test_write(struct file *file, const char __user *buf,
 
 #ifdef I2C_INTERFACE
 			fileSize |= 0x00200000;
-#endif
-
+#else
 			if (getClient() && (getClient()->mode & SPI_3WIRE) == 0)
 				fileSize |= 0x00400000;
+#endif
 
 #ifdef PHONE_KEY	/* it is a feature enabled in the config of the chip */
 			fileSize |= 0x00000100;
@@ -1967,13 +1972,22 @@ static ssize_t fts_driver_test_write(struct file *file, const char __user *buf,
 
 		case CMD_FLASHERASEPAGE:
 			if (numberParam == 2) {	/* need to pass: keep_cx */
+				pr_info("Reading FW File...\n");
+				res = readFwFile(info->board->fw_name, &fw,
+						funcToTest[1]);
+				if (res < OK)
+					pr_err("Error reading FW File ERROR"
+						"%08X\n", res);
+				else
+					pr_info("Read FW File Finished!\n");
 				pr_info("Starting Flashing Page Erase...\n");
-				res = flash_erase_page_by_page(cmd[1]);
+				res = flash_erase_page_by_page(cmd[1], &fw);
 				if (res < OK)
 					pr_err("Error during flash page erase... ERROR %08X\n",
 						res);
 				else
 					pr_info("Flash Page Erase Finished!\n");
+				kfree(fw.data);
 			} else {
 				pr_err("Wrong number of parameters!\n");
 				res = ERROR_OP_NOT_ALLOW;
@@ -1984,7 +1998,7 @@ static ssize_t fts_driver_test_write(struct file *file, const char __user *buf,
 		case CMD_ITOTEST:
 			frameMS.node_data = NULL;
 			res = production_test_ito(limits_file, &tests,
-				&frameMS);
+				&frameMS, ito_max_val);
 
 			if (frameMS.node_data != NULL) {
 				size += (frameMS.node_data_size *
@@ -2863,13 +2877,27 @@ END_DIAGNOSTIC:
 						cmd[1]);
 					res = OK;
 					if (cmd[1])
-						__pm_stay_awake(&info->wakesrc);
+						__pm_stay_awake(info->wakesrc);
 					else
-						__pm_relax(&info->wakesrc);
+						__pm_relax(info->wakesrc);
 				}
 			} else {
 				pr_err("Wrong number of parameters!\n");
 				res = ERROR_OP_NOT_ALLOW;
+			}
+			break;
+
+		case CMD_INFOBLOCK_STATUS:
+			res = fts_system_reset();
+			if (res >= OK) {
+				res = pollForErrorType(error_to_search, 2);
+				if (res < OK) {
+					pr_err("No info block corruption!\n");
+					res = OK;
+				} else {
+					pr_info("Info block errors found!\n");
+					res = ERROR_INFO_BLOCK;
+				}
 			}
 			break;
 
@@ -2900,6 +2928,9 @@ END:	/* here start the reporting phase, assembling the data to send in the
 	}
 
 	if (byte_call == 0) {
+		/* keep for ito_max_val array */
+		if (funcToTest[0] == CMD_ITOTEST)
+			size += (ARRAY_SIZE(ito_max_val) * sizeof(u16));
 		size *= 2;
 		size += 2;	/* add \n and \0 (terminator char) */
 	} else {
@@ -2991,6 +3022,20 @@ END:	/* here start the reporting phase, assembling the data to send in the
 				index += scnprintf(&driver_test_buff[index],
 						size - index, "%02X",
 						(u8)frameMS.header.sense_node);
+
+				if (funcToTest[0] == CMD_ITOTEST) {
+					index += scnprintf(&driver_test_buff[index],
+							size - index,
+							"%02X%02X",
+							(ito_max_val[0] & 0xFF00) >> 8,
+							ito_max_val[0] & 0xFF);
+
+					index += scnprintf(&driver_test_buff[index],
+							size - index,
+							"%02X%02X",
+							(ito_max_val[1] & 0xFF00) >> 8,
+							ito_max_val[1] & 0xFF);
+				}
 
 				for (j = 0; j < frameMS.node_data_size; j++) {
 					index += scnprintf(
@@ -3681,13 +3726,13 @@ int fts_proc_init(void)
 	int retval = 0;
 
 
-	fts_dir = proc_mkdir_data("fts", 0777, NULL, NULL);
+	fts_dir = proc_mkdir_data("fts", 0555, NULL, NULL);
 	if (fts_dir == NULL) {	/* directory creation failed */
 		retval = -ENOMEM;
 		goto out;
 	}
 
-	entry = proc_create(DRIVER_TEST_FILE_NODE, 0777, fts_dir,
+	entry = proc_create(DRIVER_TEST_FILE_NODE, 0666, fts_dir,
 			    &fts_driver_test_ops);
 
 	if (entry)
