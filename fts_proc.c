@@ -29,6 +29,7 @@
 #include <linux/seq_file.h>
 #include <linux/delay.h>
 #include <linux/uaccess.h>
+#include <linux/version.h>
 #include "fts.h"
 #include "fts_lib/ftsCompensation.h"
 #include "fts_lib/ftsCore.h"
@@ -852,11 +853,12 @@ static ssize_t fts_driver_test_write(struct file *file, const char __user *buf,
 	/*for(temp = 0; temp<count; temp++){
 	  *      pr_err("p[%d] = %02X\n", temp, p[temp]);
 	  * }*/
-	if (access_ok(VERIFY_READ, buf, count) < OK ||
+	if (access_ok(buf, count) < OK ||
 	    copy_from_user(pbuf, buf, count) != 0) {
 		res = ERROR_ALLOC;
 		goto END;
 	}
+
 
 	maxNum_cmd = count;
 	cmd = (u8 *)kmalloc_array(maxNum_cmd, sizeof(u8), GFP_KERNEL);
@@ -1012,7 +1014,7 @@ static ssize_t fts_driver_test_write(struct file *file, const char __user *buf,
 
 		/* FW/LIMITS path */
 		if (path_token && strlen(path_token)) {
-			strlcpy(path, path_token, sizeof(path));
+			strscpy(path, path_token, sizeof(path));
 			numberParam++;
 		}
 
@@ -1091,7 +1093,7 @@ static ssize_t fts_driver_test_write(struct file *file, const char __user *buf,
 			fileSize |= 0x00100000;
 #endif
 
-#ifdef I2C_INTERFACE
+#ifdef CONFIG_TOUCHSCREEN_STM_FTS_DOWNSTREAM_I2C
 			fileSize |= 0x00200000;
 #endif
 
@@ -2480,7 +2482,7 @@ END_DIAGNOSTIC:
 			goto ERROR;
 			break;
 
-#ifdef I2C_INTERFACE
+#ifdef CONFIG_TOUCHSCREEN_STM_FTS_DOWNSTREAM_I2C
 		case CMD_CHANGE_SAD:
 			res = changeSAD(cmd[1]);
 			break;
@@ -2863,9 +2865,9 @@ END_DIAGNOSTIC:
 						cmd[1]);
 					res = OK;
 					if (cmd[1])
-						__pm_stay_awake(&info->wakesrc);
+						__pm_stay_awake(info->wakesrc);
 					else
-						__pm_relax(&info->wakesrc);
+						__pm_relax(info->wakesrc);
 				}
 			} else {
 				pr_err("Wrong number of parameters!\n");
@@ -3658,13 +3660,23 @@ exit:
   * file_operations struct which define the functions for the canonical
   * operation on a device file node (open. read, write etc.)
   */
-static struct file_operations fts_driver_test_ops = {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 6, 0)
+static const struct proc_ops fts_driver_test_ops = {
+	.proc_open	= fts_driver_test_open,
+	.proc_read	= seq_read,
+	.proc_write	= fts_driver_test_write,
+	.proc_lseek	= seq_lseek,
+	.proc_release	= fts_driver_test_release,
+};
+#else
+static const struct file_operations fts_driver_test_ops = {
 	.open		= fts_driver_test_open,
 	.read		= seq_read,
 	.write		= fts_driver_test_write,
 	.llseek		= seq_lseek,
-	.release	= fts_driver_test_release
+	.release	= fts_driver_test_release,
 };
+#endif
 
 /*****************************************************************************/
 

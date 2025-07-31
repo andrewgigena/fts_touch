@@ -36,9 +36,9 @@
 #include <linux/module.h>
 #include <linux/slab.h>
 #include <linux/string.h>
-#include <stdarg.h>
+#include <linux/stdarg.h>
 #include <linux/serio.h>
-#include <linux/time.h>
+#include <linux/time64.h>
 #include <linux/delay.h>
 #include <linux/ctype.h>
 #include <linux/firmware.h>
@@ -64,7 +64,7 @@ int initTestToDo(void)
 	/*** Initialize Limit File ***/
 	limit_file.size = 0;
 	limit_file.data = NULL;
-	strlcpy(limit_file.name, " ", MAX_LIMIT_FILE_NAME);
+	strscpy(limit_file.name, " ", MAX_LIMIT_FILE_NAME);
 
 #ifndef COMPUTE_INIT_METHOD
 	tests.MutualRawAdjITO = 1;
@@ -7403,7 +7403,7 @@ int getLimitsFile(const char *path, LimitFile *file)
 		file->size = 0;
 	}
 
-	strlcpy(file->name, path, MAX_LIMIT_FILE_NAME);
+	strscpy(file->name, path, MAX_LIMIT_FILE_NAME);
 	if (strncmp(path, "NULL", 4) == 0) {
 #ifdef LIMITS_H_FILE
 		pr_info("Loading Limits File from .h!\n");
@@ -7478,7 +7478,7 @@ int freeLimitsFile(LimitFile *file)
 		} else
 			pr_err("Limit File was already freed!\n");
 		file->size = 0;
-		strlcpy(file->name, " ", MAX_LIMIT_FILE_NAME);
+		strscpy(file->name, " ", MAX_LIMIT_FILE_NAME);
 		return OK;
 	} else {
 		pr_err("Passed a NULL argument! ERROR %08X\n",

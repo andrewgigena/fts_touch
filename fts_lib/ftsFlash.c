@@ -37,9 +37,9 @@
 #include <linux/module.h>
 #include <linux/slab.h>
 #include <linux/string.h>
-#include <stdarg.h>
+#include <linux/stdarg.h>
 #include <linux/serio.h>
-#include <linux/time.h>
+#include <linux/time64.h>
 #include <linux/delay.h>
 #include <linux/ctype.h>
 #include <linux/fs.h>
@@ -77,7 +77,7 @@ int getFWdata(const char *pathToFile, u8 **data, int *size)
 		info = dev_get_drvdata(dev);
 
 	pr_info("getFWdata starting ...\n");
-	if (strncmp(pathToFile, "NULL", 4) == 0) {
+	if (pathToFile == NULL || strncmp(pathToFile, "NULL", 4) == 0) {
 		from = 1;
 		if (info != NULL && info->board)
 			path = (char *)info->board->fw_name;
@@ -187,6 +187,10 @@ int flashProcedure(const char *path, int force, int keep_cx)
 
 	fw.data = NULL;
 	pr_info("Reading Fw file...\n");
+
+	pr_info("%s: path=\"%s\", force=%d, keep_cx=%d\n",
+		__func__, path, force, keep_cx);
+
 	res = readFwFile(path, &fw, keep_cx);
 	if (res < OK) {
 		pr_err("flashProcedure: ERROR %08X\n",
@@ -230,7 +234,7 @@ int wait_for_flash_ready(u8 type)
 			pr_err("wait_for_flash_ready: ERROR %08X\n",
 				ERROR_BUS_W);
 		else {
-#ifdef I2C_INTERFACE	/* in case of spi there is a dummy byte */
+#ifdef CONFIG_TOUCHSCREEN_STM_FTS_DOWNSTREAM_I2C	/* in case of spi there is a dummy byte */
 			res = readData[0] & 0x80;
 #else
 			res = readData[1] & 0x80;
@@ -270,7 +274,7 @@ int hold_m3(void)
 	}
 	pr_info("Hold M3 DONE!\n");
 
-#if !defined(I2C_INTERFACE)
+#if !defined(CONFIG_TOUCHSCREEN_STM_FTS_DOWNSTREAM_I2C)
 	if (getClient() &&
 		(getClient()->mode & SPI_3WIRE) == 0) {
 		/* configure manually SPI4 because when no fw is running the

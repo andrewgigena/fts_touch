@@ -33,9 +33,13 @@
 #define _LINUX_FTS_I2C_H_
 
 #include <linux/device.h>
+#ifdef CONFIG_TOUCHSCREEN_HEATMAP
 #include <linux/input/heatmap.h>
+#endif
 #include <linux/pm_qos.h>
+#ifdef CONFIG_TOUCHSCREEN_OFFLOAD
 #include <linux/input/touch_offload.h>
+#endif
 #include <drm/drm_panel.h>
 #include "fts_lib/ftsSoftware.h"
 #include "fts_lib/ftsHardware.h"
@@ -200,7 +204,7 @@
 
 /**@}*/
 /*********************************************************/
-
+#ifdef CONFIG_TOUCHSCREEN_HEATMAP
 /* **** LOCAL HEATMAP FEATURE *** */
 #define LOCAL_HEATMAP_WIDTH 7
 #define LOCAL_HEATMAP_HEIGHT 7
@@ -219,7 +223,7 @@ struct heatmap_report {
 	strength_t data[LOCAL_HEATMAP_WIDTH * LOCAL_HEATMAP_HEIGHT];
 } __attribute__((packed));
 /* **** END **** */
-
+#endif
 /*
   * Configuration mode
   *
@@ -285,7 +289,9 @@ struct fts_hw_platform_data {
 	int x_axis_max;
 	int y_axis_max;
 	bool auto_fw_update;
+#ifdef CONFIG_TOUCHSCREEN_HEATMAP
 	bool heatmap_mode_full_init;
+#endif
 	struct drm_panel *panel;
 	u32 initial_panel_index;
 };
@@ -316,12 +322,13 @@ typedef enum {
  *			(LOCAL_HEATMAP_WIDTH * LOCAL_HEATMAP_HEIGHT)
  * FTS_HEATMAP_FULL	- read full mutual sense strength frame
  */
+#ifdef CONFIG_TOUCHSCREEN_HEATMAP
 enum {
 	FTS_HEATMAP_OFF		= 0,
 	FTS_HEATMAP_PARTIAL	= 1,
 	FTS_HEATMAP_FULL	= 2
 };
-
+#endif
 /*
   * Forward declaration
   */
@@ -381,7 +388,7 @@ struct fts_touchsim{
   */
 struct fts_ts_info {
 	struct device           *dev;	/* Pointer to the device */
-#ifdef I2C_INTERFACE
+#ifdef CONFIG_TOUCHSCREEN_STM_FTS_DOWNSTREAM_I2C
 	struct i2c_client       *client;	/* I2C client structure */
 #else
 	struct spi_device       *client;	/* SPI client structure */
@@ -396,8 +403,9 @@ struct fts_ts_info {
 	struct completion bus_resumed;		/* resume_work complete */
 
 	struct pm_qos_request pm_qos_req;
-
+#ifdef CONFIG_TOUCHSCREEN_HEATMAP
 	struct v4l2_heatmap v4l2;
+#endif
 
 #ifdef CONFIG_TOUCHSCREEN_OFFLOAD
 	struct touch_offload_context offload;
@@ -439,7 +447,7 @@ struct fts_ts_info {
 	struct notifier_block notifier;	/* Notify on suspend/resume */
 	int display_refresh_rate;	/* Display rate in Hz */
 	bool sensor_sleep;		/* True if suspend called */
-	struct wakeup_source wakesrc;	/* Wake Lock struct */
+	struct wakeup_source *wakesrc;	/* Wake Lock struct */
 
 	/* input lock */
 	struct mutex input_report_mutex;	/* Mutex for pressure report */
@@ -451,8 +459,9 @@ struct fts_ts_info {
 	int stylus_enabled;	/* Stylus mode */
 	int cover_enabled;	/* Cover mode */
 	int grip_enabled;	/* Grip mode */
-
+#ifdef CONFIG_TOUCHSCREEN_HEATMAP
 	int heatmap_mode;	/* heatmap mode*/
+#endif
 
 	/* Stop changing motion filter and keep fw design */
 	bool use_default_mf;

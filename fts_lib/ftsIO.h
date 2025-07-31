@@ -28,7 +28,7 @@
 #define I2C_WAIT_BEFORE_RETRY	2	/* /< wait in ms before retry an i2c
 					 * transaction */
 
-#ifdef I2C_INTERFACE
+#ifdef CONFIG_TOUCHSCREEN_STM_FTS_DOWNSTREAM_I2C
 #include <linux/i2c.h>
 #include <linux/i2c-dev.h>
 struct i2c_client *getClient(void);
@@ -45,7 +45,7 @@ struct device *getDev(void);
 
 
 /*************** NEW I2C API ****************/
-#ifdef I2C_INTERFACE
+#ifdef CONFIG_TOUCHSCREEN_STM_FTS_DOWNSTREAM_I2C
 int changeSAD(u8 sad);
 #endif
 int fts_read(u8 *outBuf, int byteToRead);

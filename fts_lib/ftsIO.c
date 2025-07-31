@@ -27,12 +27,12 @@
 #include <linux/module.h>
 #include <linux/slab.h>
 #include <linux/string.h>
-#include <stdarg.h>
+#include <linux/stdarg.h>
 #include <linux/delay.h>
 #include <linux/ctype.h>
 #include <linux/of_gpio.h>
 
-#ifdef I2C_INTERFACE
+#ifdef CONFIG_TOUCHSCREEN_STM_FTS_DOWNSTREAM_I2C
 #include <linux/i2c.h>
 #include <linux/i2c-dev.h>
 static u16 I2CSAD;	/* /< slave address of the IC in the i2c bus */
@@ -61,15 +61,15 @@ static void *client;	/* /< bus client retrived by the OS and
 int openChannel(void *clt)
 {
 	client = clt;
-#ifdef I2C_INTERFACE
+#ifdef CONFIG_TOUCHSCREEN_STM_FTS_DOWNSTREAM_I2C
 	I2CSAD = ((struct i2c_client *)clt)->addr;
 	pr_info("openChannel: SAD: %02X\n", I2CSAD);
 #else
-	pr_info("%s: spi_master: flags = %04X !\n", __func__,
-		 ((struct spi_device *)client)->master->flags);
-	pr_info("%s: spi_device: max_speed = %d chip select = %02X bits_per_words = %d mode = %04X !\n",
+	pr_info("%s: spi_controller: flags = %04X !\n", __func__,
+        ((struct spi_device *)client)->controller->flags);
+	pr_info("%s: spi_device: max_speed = %d chip select = %p bits_per_words = %d mode = %04X !\n",
 		__func__, ((struct spi_device *)client)->max_speed_hz,
-		((struct spi_device *)client)->chip_select,
+        (void *)((struct spi_device *)client)->chip_select,
 		((struct spi_device *)client)->bits_per_word,
 		((struct spi_device *)client)->mode);
 	pr_info("openChannel: completed!\n");
@@ -77,7 +77,7 @@ int openChannel(void *clt)
 	return OK;
 }
 
-#ifdef I2C_INTERFACE
+#ifdef CONFIG_TOUCHSCREEN_STM_FTS_DOWNSTREAM_I2C
 /**
   * Change the I2C slave address which will be used during the transaction
   * (For Debug Only)
@@ -106,7 +106,7 @@ struct device *getDev(void)
 }
 
 
-#ifdef I2C_INTERFACE
+#ifdef CONFIG_TOUCHSCREEN_STM_FTS_DOWNSTREAM_I2C
 /**
   * Retrieve the pointer of the i2c_client struct representing the IC as i2c
   * slave
@@ -134,7 +134,7 @@ struct spi_device *getClient()
 }
 #endif
 
-struct fts_ts_info *getDrvInfo(void)
+static struct fts_ts_info *getDrvInfo(void)
 {
 	struct device *dev = getDev();
 	struct fts_ts_info *info = NULL;
@@ -158,7 +158,7 @@ static int fts_read_internal(u8 *outBuf, int byteToRead, bool dma_safe)
 	int ret = -1;
 	int retry = 0;
 	struct fts_ts_info *info = getDrvInfo();
-#ifdef I2C_INTERFACE
+#ifdef CONFIG_TOUCHSCREEN_STM_FTS_DOWNSTREAM_I2C
 	struct i2c_msg I2CMsg[1];
 #else
 	struct spi_message msg;
@@ -170,7 +170,7 @@ static int fts_read_internal(u8 *outBuf, int byteToRead, bool dma_safe)
 		return ERROR_ALLOC;
 	}
 
-#ifdef I2C_INTERFACE
+#ifdef CONFIG_TOUCHSCREEN_STM_FTS_DOWNSTREAM_I2C
 	I2CMsg[0].addr = (__u16)I2CSAD;
 	I2CMsg[0].flags = (__u16)I2C_M_RD;
 	I2CMsg[0].len = (__u16)byteToRead;
@@ -182,7 +182,8 @@ static int fts_read_internal(u8 *outBuf, int byteToRead, bool dma_safe)
 	spi_message_init(&msg);
 
 	transfer[0].len = byteToRead;
-	transfer[0].delay_usecs = SPI_DELAY_CS;
+	transfer[0].delay.value = SPI_DELAY_CS;
+	transfer[0].delay.unit = SPI_DELAY_UNIT_USECS;
 	transfer[0].tx_buf = NULL;
 	if (dma_safe == false)
 		transfer[0].rx_buf = info->io_read_buf;
@@ -194,7 +195,7 @@ static int fts_read_internal(u8 *outBuf, int byteToRead, bool dma_safe)
 	if (client == NULL)
 		return ERROR_BUS_O;
 	while (retry < I2C_RETRY && ret < OK) {
-#ifdef I2C_INTERFACE
+#ifdef CONFIG_TOUCHSCREEN_STM_FTS_DOWNSTREAM_I2C
 		ret = i2c_transfer(getClient()->adapter, I2CMsg, 1);
 #else
 		ret = spi_sync(getClient(), &msg);
@@ -232,7 +233,7 @@ static int fts_writeRead_internal(u8 *cmd, int cmdLength, u8 *outBuf,
 	int ret = -1;
 	int retry = 0;
 	struct fts_ts_info *info = getDrvInfo();
-#ifdef I2C_INTERFACE
+#ifdef CONFIG_TOUCHSCREEN_STM_FTS_DOWNSTREAM_I2C
 	struct i2c_msg I2CMsg[2];
 #else
 	struct spi_message msg;
@@ -245,7 +246,7 @@ static int fts_writeRead_internal(u8 *cmd, int cmdLength, u8 *outBuf,
 		return ERROR_ALLOC;
 	}
 
-#ifdef I2C_INTERFACE
+#ifdef CONFIG_TOUCHSCREEN_STM_FTS_DOWNSTREAM_I2C
 	if (dma_safe == false) {
 		memcpy(info->io_write_buf, cmd, cmdLength);
 		cmd = info->io_write_buf;
@@ -279,7 +280,8 @@ static int fts_writeRead_internal(u8 *cmd, int cmdLength, u8 *outBuf,
 	spi_message_add_tail(&transfer[0], &msg);
 
 	transfer[1].len = byteToRead;
-	transfer[1].delay_usecs = SPI_DELAY_CS;
+	transfer[1].delay.value = SPI_DELAY_CS;
+	transfer[1].delay.unit = SPI_DELAY_UNIT_USECS;
 	transfer[1].tx_buf = NULL;
 	if (dma_safe == false)
 		transfer[1].rx_buf = info->io_read_buf;
@@ -293,7 +295,7 @@ static int fts_writeRead_internal(u8 *cmd, int cmdLength, u8 *outBuf,
 		return ERROR_BUS_O;
 
 	while (retry < I2C_RETRY && ret < OK) {
-#ifdef I2C_INTERFACE
+#ifdef CONFIG_TOUCHSCREEN_STM_FTS_DOWNSTREAM_I2C
 		ret = i2c_transfer(getClient()->adapter, I2CMsg, 2);
 #else
 		ret = spi_sync(getClient(), &msg);
@@ -326,7 +328,7 @@ static int fts_write_internal(u8 *cmd, int cmdLength, bool dma_safe)
 	int ret = -1;
 	int retry = 0;
 	struct fts_ts_info *info = getDrvInfo();
-#ifdef I2C_INTERFACE
+#ifdef CONFIG_TOUCHSCREEN_STM_FTS_DOWNSTREAM_I2C
 	struct i2c_msg I2CMsg[1];
 #else
 	struct spi_message msg;
@@ -338,7 +340,7 @@ static int fts_write_internal(u8 *cmd, int cmdLength, bool dma_safe)
 		return ERROR_ALLOC;
 	}
 
-#ifdef I2C_INTERFACE
+#ifdef CONFIG_TOUCHSCREEN_STM_FTS_DOWNSTREAM_I2C
 	if (dma_safe == false) {
 		memcpy(info->io_write_buf, cmd, cmdLength);
 		cmd = info->io_write_buf;
@@ -357,7 +359,8 @@ static int fts_write_internal(u8 *cmd, int cmdLength, bool dma_safe)
 	spi_message_init(&msg);
 
 	transfer[0].len = cmdLength;
-	transfer[0].delay_usecs = SPI_DELAY_CS;
+	transfer[0].delay.value = SPI_DELAY_CS;
+	transfer[0].delay.unit = SPI_DELAY_UNIT_USECS;
 	transfer[0].tx_buf = cmd;
 	transfer[0].rx_buf = NULL;
 	spi_message_add_tail(&transfer[0], &msg);
@@ -367,7 +370,7 @@ static int fts_write_internal(u8 *cmd, int cmdLength, bool dma_safe)
 	if (client == NULL)
 		return ERROR_BUS_O;
 	while (retry < I2C_RETRY && ret < OK) {
-#ifdef I2C_INTERFACE
+#ifdef CONFIG_TOUCHSCREEN_STM_FTS_DOWNSTREAM_I2C
 		ret = i2c_transfer(getClient()->adapter, I2CMsg, 1);
 #else
 		ret = spi_sync(getClient(), &msg);
@@ -397,7 +400,7 @@ static int fts_writeFwCmd_internal(u8 *cmd, int cmdLength, bool dma_safe)
 	int ret2 = -1;
 	int retry = 0;
 	struct fts_ts_info *info = getDrvInfo();
-#ifdef I2C_INTERFACE
+#ifdef CONFIG_TOUCHSCREEN_STM_FTS_DOWNSTREAM_I2C
 	struct i2c_msg I2CMsg[1];
 #else
 	struct spi_message msg;
@@ -409,7 +412,7 @@ static int fts_writeFwCmd_internal(u8 *cmd, int cmdLength, bool dma_safe)
 		return ERROR_ALLOC;
 	}
 
-#ifdef I2C_INTERFACE
+#ifdef CONFIG_TOUCHSCREEN_STM_FTS_DOWNSTREAM_I2C
 	if (dma_safe == false) {
 		memcpy(info->io_write_buf, cmd, cmdLength);
 		cmd = info->io_write_buf;
@@ -428,7 +431,8 @@ static int fts_writeFwCmd_internal(u8 *cmd, int cmdLength, bool dma_safe)
 	spi_message_init(&msg);
 
 	transfer[0].len = cmdLength;
-	transfer[0].delay_usecs = SPI_DELAY_CS;
+	transfer[0].delay.value = SPI_DELAY_CS;
+	transfer[0].delay.unit = SPI_DELAY_UNIT_USECS;
 	transfer[0].tx_buf = cmd;
 	transfer[0].rx_buf = NULL;
 	spi_message_add_tail(&transfer[0], &msg);
@@ -438,7 +442,7 @@ static int fts_writeFwCmd_internal(u8 *cmd, int cmdLength, bool dma_safe)
 		return ERROR_BUS_O;
 	resetErrorList();
 	while (retry < I2C_RETRY && (ret < OK || ret2 < OK)) {
-#ifdef I2C_INTERFACE
+#ifdef CONFIG_TOUCHSCREEN_STM_FTS_DOWNSTREAM_I2C
 		ret = i2c_transfer(getClient()->adapter, I2CMsg, 1);
 #else
 		ret = spi_sync(getClient(), &msg);
@@ -483,7 +487,7 @@ static int fts_writeThenWriteRead_internal(u8 *writeCmd1, int writeCmdLength,
 	int ret = -1;
 	int retry = 0;
 	struct fts_ts_info *info = getDrvInfo();
-#ifdef I2C_INTERFACE
+#ifdef CONFIG_TOUCHSCREEN_STM_FTS_DOWNSTREAM_I2C
 	struct i2c_msg I2CMsg[3];
 #else
 	struct spi_message msg;
@@ -497,7 +501,7 @@ static int fts_writeThenWriteRead_internal(u8 *writeCmd1, int writeCmdLength,
 		return ERROR_ALLOC;
 	}
 
-#ifdef I2C_INTERFACE
+#ifdef CONFIG_TOUCHSCREEN_STM_FTS_DOWNSTREAM_I2C
 	if (dma_safe == false) {
 		memcpy(info->io_write_buf, writeCmd1, writeCmdLength);
 		writeCmd1 = info->io_write_buf;
@@ -546,7 +550,8 @@ static int fts_writeThenWriteRead_internal(u8 *writeCmd1, int writeCmdLength,
 	spi_message_add_tail(&transfer[1], &msg);
 
 	transfer[2].len = byteToRead;
-	transfer[2].delay_usecs = SPI_DELAY_CS;
+	transfer[2].delay.value = SPI_DELAY_CS;
+	transfer[2].delay.unit = SPI_DELAY_UNIT_USECS;
 	transfer[2].tx_buf = NULL;
 	if (dma_safe == false)
 		transfer[2].rx_buf = info->io_read_buf;
@@ -558,7 +563,7 @@ static int fts_writeThenWriteRead_internal(u8 *writeCmd1, int writeCmdLength,
 	if (client == NULL)
 		return ERROR_BUS_O;
 	while (retry < I2C_RETRY && ret < OK) {
-#ifdef I2C_INTERFACE
+#ifdef CONFIG_TOUCHSCREEN_STM_FTS_DOWNSTREAM_I2C
 		ret = i2c_transfer(getClient()->adapter, I2CMsg, 3);
 #else
 		ret = spi_sync(getClient(), &msg);
